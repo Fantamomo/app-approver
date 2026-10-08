@@ -1,4 +1,4 @@
-package utils
+package com.fantamomo.slack.approver.utils
 
 import io.ktor.server.request.*
 import java.security.MessageDigest

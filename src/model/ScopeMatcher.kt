@@ -58,7 +58,7 @@ sealed interface ScopeMatcher {
             val starIndex = scope.indexOf('*')
             if (starIndex != -1) {
                 if (scope.length == 1) return ALL_SCOPES
-                if (scope.length == starIndex + 1 && scope[starIndex - 1] == ':') return PrefixScopeMatcher(scope.substring(0, starIndex))
+                if (scope.length == starIndex + 1 && (scope[starIndex - 1] == ':' || scope[starIndex - 1] == '.')) return PrefixScopeMatcher(scope.substring(0, starIndex))
                 return WildcardScopeMatcher(scope)
             }
             return DirectScopeMatcher(scope)
