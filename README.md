@@ -81,3 +81,12 @@ The reason behind this is to allow the reviewer to override the automation decis
 The review team can restrict an app. That means that the app can never be requested again. Slack **does not** allow you to do this.
 
 Only use this if absolutely necessary. You can still undo it.
+
+## Status
+
+The status of your requests can be viewed in the App Home of the installed app if you are not a team member.
+If you are a team member, you can view all pending requests in the App Home and the last decisions made.
+
+The Bot also DMs the user about the status of their request. And why it was rejected.
+
+There is also a public LOG channel where all requests are logged.
