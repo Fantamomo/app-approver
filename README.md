@@ -6,7 +6,9 @@ This is a Slack bot that handles the request approval process for a Slack organi
 
 Create a new Slack app using the [`manifest.json`](manifest.json).
 
-Then install the app to your **Slack Enterprise Organization**, not to a single workspace.
+Then install the app to your **Slack Enterprise Organization**, not to a single workspace. You need to be an organization admin/owner.
+
+We recommend using a new admin account for this, so that all actions are performed under this account. And not yours.
 
 Start the program. On the first run, it will automatically generate a `config.properties` file containing all available configuration options.
 
@@ -51,15 +53,15 @@ When a request is received, the bot checks the following to determinate if the r
     - If there is any reviewable scope, the request need to be manually reviewed.
     - If the user is not verified and the request not only contains allowed for unverified users scopes, the request is rejected.
 5. **Previous approved scopes**: But hold on, let's review the previous approved scopes first.
-  - If the previous approved scopes contained any restricted scopes, and this request does not add any new restricted scopes, the request is approved.
-  - If this request adds any new restricted scopes, the request is rejected or reviewed within the above rules.
+    - If the previous approved scopes contained any restricted scopes, and this request does not add any new restricted scopes, the request is approved.
+    - If this request adds any new restricted scopes, the request is rejected or reviewed within the above rules.
 
 ## Rejecting
 
 I talked a lot about rejecting requests above. Actually the request is not rejected, we mark it like that, but on the slack side, it is still pending review.  
 
 This is used because of how slack works: When a member requests an app, a request is created with the pending status.  
-If we automatically approve it, we tell slack that it is approved.
+If we automatically approve it, we tell slack that it is approved.  
 But if the automation rejects it, we dont tell slack that it is rejected. That is because if we do, there is no way to approve it afterward.
 
 New Problem: A user cannot send a new request if they have a pending request. So there is a button to withdraw the request, which cancels the request on slack side, so the user can send a new request.
