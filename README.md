@@ -46,6 +46,8 @@ The format is the following: `<scope>`, `<type: ALLOWED|RESTRICTED|ALLOWED_FOR_U
 **Adding a team member:**  
 Open the `approve_team_member` table and add a new row with the id of the user you want to add, set the `since` to the current date and time.
 
+> A better way to modify restrictions and team members is coming soon
+
 #### HTTP API
 
 Slack events are received through the HTTP endpoint:
