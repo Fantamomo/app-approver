@@ -20,7 +20,7 @@ object Config {
 
     val PORT by int(
         key = "server.port",
-        default = 29001,
+        default = 80,
         description = "The port the HTTP server should listen on."
     )
 

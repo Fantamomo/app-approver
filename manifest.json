@@ -1,0 +1,49 @@
+{
+  "display_information": {
+    "name": "App Approver"
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": true,
+      "agent_tasks_enabled": false
+    },
+    "bot_user": {
+      "display_name": "App Approver",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "user": [
+        "admin.apps:read",
+        "admin.apps:write"
+      ],
+      "bot": [
+        "chat:write",
+        "im:read",
+        "im:write"
+      ]
+    },
+    "pkce_enabled": false
+  },
+  "settings": {
+    "event_subscriptions": {
+      "user_events": [
+        "app_requested"
+      ],
+      "bot_events": [
+        "app_home_opened"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true
+    },
+    "org_deploy_enabled": true,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false,
+    "app_level_token_rotation_enabled": false,
+    "is_mcp_enabled": false
+  }
+}

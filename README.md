@@ -1,39 +1,81 @@
-# bot-approver
+# app-approver
 
-This project was created using the [Ktor Project Generator](https://start.ktor.io).
+This is a Slack bot that handles the request approval process for a Slack organization.
 
-Here are some useful links to get you started:
+## Installation
 
-* [Ktor Documentation](https://ktor.io/docs/home.html)
-* [Ktor GitHub page](https://github.com/ktorio/ktor)
-* [Ktor Slack chat](https://app.slack.com/client/T09229ZC6/C0A974TJ9). [Request an invite](https://surveys.jetbrains.com/s3/kotlin-slack-sign-up).
+Create a new Slack app using the [`manifest.json`](manifest.json).
 
-## Features
+Then install the app to your **Slack Enterprise Organization**, not to a single workspace.
 
-Here's a list of features included in this project:
+Start the program. On the first run, it will automatically generate a `config.properties` file containing all available configuration options.
 
-| Name                                                                                  | Description                                                                        |
-|---------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
-| [Call Logging](https://start.ktor.io/p/io.ktor/server-call-logging)                   | Logs client requests                                                               |
-| [Content Negotiation](https://start.ktor.io/p/io.ktor/server-content-negotiation)     | Provides automatic content conversion according to Content-Type and Accept headers |
-| [kotlinx.serialization](https://start.ktor.io/p/io.ktor/server-kotlinx-serialization) | Handles JSON serialization using kotlinx.serialization library                     |
-| [Exposed](https://start.ktor.io/p/org.jetbrains/server-exposed)                       | Adds Exposed database to your application                                          |
-| [PostgreSQL](https://start.ktor.io/p/org.jetbrains/server-postgres)                   | Adds Postgres database support                                                     |
-| [Rate Limiting](https://start.ktor.io/p/io.github.flaxoos/server-rate-limiting)       | Manage request rate limiting as you see fit                                        |
+### Configuration
 
-## Building & Running
+The configuration file can be specified using the `CONFIG_FILE_PATH` environment variable. If it is not set, `config.properties` in the current working directory is used.
 
-To build or run the project, use one of the following tasks:
+| Config                 | Description                                               | Required | Default                                      | Environment Variable   |
+| ---------------------- | --------------------------------------------------------- | -------: | -------------------------------------------- | ---------------------- |
+| `server.port`          | The port the HTTP server should listen on.                |       No | `80`                                         | —                      |
+| `server.host`          | The host/interface the server should bind to.             |       No | `0.0.0.0`                                    | —                      |
+| `postgres.url`         | The R2DBC URL of the PostgreSQL database.                 |       No | `r2dbc:postgresql://localhost:5432/postgres` | `POSTGRES_URL`         |
+| `postgres.user`        | The username for the PostgreSQL database.                 |       No | `postgres`                                   | `POSTGRES_USER`        |
+| `postgres.password`    | The password for the PostgreSQL database.                 |       No | `postgres`                                   | `POSTGRES_PASSWORD`    |
+| `slack.bot.token`      | The Slack bot token.                                      |  **Yes** | —                                            | `SLACK_BOT_TOKEN`      |
+| `slack.user.token`     | The Slack user token.                                     |  **Yes** | —                                            | `SLACK_USER_TOKEN`     |
+| `slack.app.token`      | The Slack app token used for Socket Mode.                 |       No | Empty                                        | `SLACK_APP_TOKEN`      |
+| `slack.channel.review` | The Slack channel used for reviews.                       |  **Yes** | —                                            | `SLACK_CHANNEL_REVIEW` |
+| `slack.channel.log`    | The Slack channel used for review logs.                   |  **Yes** | —                                            | `SLACK_CHANNEL_LOG`    |
+| `slack.team.id`        | The Slack team ID.                                        |  **Yes** | —                                            | `SLACK_TEAM_ID`        |
+| `socket.mode`          | Whether to use Slack Socket Mode instead of the HTTP API. |       No | `false`                                      | `SOCKET_MODE`          |
 
-| Task             | Description       |
-|------------------|-------------------|
-| `./kotlin test`  | Run the tests     |
-| `./kotlin build` | Build the project |
-| `./kotlin run`   | Run the server    |
+#### HTTP API
 
-If the server starts successfully, you'll see the following output:
+Slack events are received through the HTTP endpoint:
 
+```text
+/slack/events
 ```
-2024-12-04 14:32:45.584 [main] INFO  Application - Application started in 0.303 seconds.
-2024-12-04 14:32:45.682 [main] INFO  Application - Responding at http://0.0.0.0:8080
-```
+
+Set in your Slack app the **Request URL** to `/slack/events`, the same for Interactions.
+
+## Approval Flow
+
+When a request is received, the bot checks the following to determinate if the request is valid and should be approved or rejected.
+
+1. **Restricted**: If the application is restricted, the request is rejected.
+2. **Enterprise Installation**: If the request is for the entier org, the request is rejected.
+3. **Previous denied request**: If the request was previously denied, and nothing changed, the request is also rejected.
+4. **Scope evaluation**: All the scopes are checked against the restricted scopes:
+    - If there is any no reviewable scope, the request is rejected.
+    - If there is any reviewable scope, the request need to be manually reviewed.
+    - If the user is not verified and the request not only contains allowed for unverified users scopes, the request is rejected.
+5. **Previous approved scopes**: But hold on, let's review the previous approved scopes first.
+  - If the previous approved scopes contained any restricted scopes, and this request does not add any new restricted scopes, the request is approved.
+  - If this request adds any new restricted scopes, the request is rejected or reviewed within the above rules.
+
+## Rejecting
+
+I talked a lot about rejecting requests above. Actually the request is not rejected, we mark it like that, but on the slack side, it is still pending review.  
+
+This is used because of how slack works: When a member requests an app, a request is created with the pending status.  
+If we automatically approve it, we tell slack that it is approved.
+But if the automation rejects it, we dont tell slack that it is rejected. That is because if we do, there is no way to approve it afterward.
+
+New Problem: A user cannot send a new request if they have a pending request. So there is a button to withdraw the request, which cancels the request on slack side, so the user can send a new request.
+
+But there is also a request manual review button, which only change our status to pending review.
+
+**That's the reason why we dont directly tell slack that the request is rejected.**
+
+## Reviewing
+
+Every request that is sent creates a new thread in the review channel, even if it is rejected or approved automatically.
+
+The reason behind this is to allow the reviewer to override the automation decision. Also in the thread all the actions are visible.
+
+## Restricting
+
+The review team can restrict an app. That means that the app can never be requested again. Slack **does not** allow you to do this.
+
+Only use this if absolutely necessary. You can still undo it.
