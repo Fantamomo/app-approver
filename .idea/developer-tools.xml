@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DeveloperToolsToolWindowSettingsV1" lastSelectedContentNodeId="base64-encoder-decoder" pluginVersion="9.0.0">
+    <developerToolsConfigurations />
+    <expandedGroupNodeIds>
+      <expandedGroupNodeId value="cryptography" />
+      <expandedGroupNodeId value="encoder-decoder" />
+      <expandedGroupNodeId value="formatting" />
+      <expandedGroupNodeId value="text" />
+    </expandedGroupNodeIds>
+  </component>
+</project>

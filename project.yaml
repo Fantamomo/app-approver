@@ -1,0 +1,2 @@
+mavenPlugins:
+  - org.jetbrains.exposed.plugin:exposed-maven-plugin:1.5.0

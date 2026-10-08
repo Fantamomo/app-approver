@@ -1,0 +1,37 @@
+product: jvm/app
+
+mavenPlugins:
+  exposed-maven-plugin.generate-migrations:
+    enabled: true
+    configuration:
+      testContainersImageName: postgres:latest
+      tablesPackage: com.fantamomo.slack.approver.db
+      fileDirectory: resources/db/migrations
+
+dependencies:
+  - $ktor.serialization.kotlinx.json
+  - $ktor.server.callLogging
+  - $ktor.server.contentNegotiation
+  - $ktor.server.core
+  - $ktor.server.netty
+  - $ktor.client.core
+  - $ktor.client.okhttp
+  - $ktor.client.contentNegotiation
+  - $libs.exposed.core
+  - $libs.exposed.r2dbc
+  - $libs.exposed.kotlin.datetime
+  - $libs.flaxoos.ktor.server.rateLimiting
+  - $libs.logback.classic
+  - $libs.postgresql
+  - $libs.postgresql.r2dbc
+  - $libs.slack.api.client.kotlin.extension
+  - "com.slack.api:slack-api-client:1.52.0"
+
+test-dependencies:
+  - $ktor.server.testHost
+
+settings:
+  ktor: enabled
+  kotlin:
+    serialization: enabled
+

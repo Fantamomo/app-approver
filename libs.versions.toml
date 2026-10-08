@@ -1,0 +1,25 @@
+[versions]
+exposed = "1.5.0"
+exposed-datetime = "1.5.0"
+flaxoos = "2.3.0"
+h2 = "2.4.240"
+h2-r2dbc = "1.1.0.RELEASE"
+kotlin = "2.4.0"
+logback = "1.5.37"
+postgresql = "42.7.13"
+postgresql-r2dbc = "1.1.1.RELEASE"
+slack-api-client-kotlin-extension = "1.52.0"
+
+[libraries]
+exposed-core = { module = "org.jetbrains.exposed:exposed-core", version.ref = "exposed" }
+exposed-r2dbc = { module = "org.jetbrains.exposed:exposed-r2dbc", version.ref = "exposed" }
+exposed-kotlin-datetime = { module = "org.jetbrains.exposed:exposed-kotlin-datetime", version.ref = "exposed-datetime" }
+flaxoos-ktor-server-rateLimiting = { module = "io.github.flaxoos:ktor-server-rate-limiting", version.ref = "flaxoos" }
+#h2database-h2 = { module = "com.h2database:h2", version.ref = "h2" }
+#h2database-r2dbc = { module = "io.r2dbc:r2dbc-h2", version.ref = "h2-r2dbc" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+postgresql-r2dbc = { module = "org.postgresql:r2dbc-postgresql", version.ref = "postgresql-r2dbc" }
+slack-api-client-kotlin-extension = { module = "com.slack.api:slack-api-client-kotlin-extension", version.ref = "slack-api-client-kotlin-extension" }
+
+[plugins]

@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS migration (migration VARCHAR(255) NOT NULL, applied_at TIMESTAMP NOT NULL);
