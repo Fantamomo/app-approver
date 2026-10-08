@@ -16,20 +16,35 @@ Start the program. On the first run, it will automatically generate a `config.pr
 
 The configuration file can be specified using the `CONFIG_FILE_PATH` environment variable. If it is not set, `config.properties` in the current working directory is used.
 
-| Config                 | Description                                               | Required | Default                                      | Environment Variable   |
-| ---------------------- | --------------------------------------------------------- | -------: | -------------------------------------------- | ---------------------- |
-| `server.port`          | The port the HTTP server should listen on.                |       No | `80`                                         | —                      |
-| `server.host`          | The host/interface the server should bind to.             |       No | `0.0.0.0`                                    | —                      |
-| `postgres.url`         | The R2DBC URL of the PostgreSQL database.                 |       No | `r2dbc:postgresql://localhost:5432/postgres` | `POSTGRES_URL`         |
-| `postgres.user`        | The username for the PostgreSQL database.                 |       No | `postgres`                                   | `POSTGRES_USER`        |
-| `postgres.password`    | The password for the PostgreSQL database.                 |       No | `postgres`                                   | `POSTGRES_PASSWORD`    |
-| `slack.bot.token`      | The Slack bot token.                                      |  **Yes** | —                                            | `SLACK_BOT_TOKEN`      |
-| `slack.user.token`     | The Slack user token.                                     |  **Yes** | —                                            | `SLACK_USER_TOKEN`     |
-| `slack.app.token`      | The Slack app token used for Socket Mode.                 |       No | Empty                                        | `SLACK_APP_TOKEN`      |
-| `slack.channel.review` | The Slack channel used for reviews.                       |  **Yes** | —                                            | `SLACK_CHANNEL_REVIEW` |
-| `slack.channel.log`    | The Slack channel used for review logs.                   |  **Yes** | —                                            | `SLACK_CHANNEL_LOG`    |
-| `slack.team.id`        | The Slack team ID.                                        |  **Yes** | —                                            | `SLACK_TEAM_ID`        |
-| `socket.mode`          | Whether to use Slack Socket Mode instead of the HTTP API. |       No | `false`                                      | `SOCKET_MODE`          |
+| Config                 | Description                                                         | Required | Default                                      | Environment Variable   |
+|------------------------|---------------------------------------------------------------------|---------:|----------------------------------------------|------------------------|
+| `server.port`          | The port the HTTP server should listen on.                          |       No | `80`                                         | —                      |
+| `server.host`          | The host/interface the server should bind to.                       |       No | `0.0.0.0`                                    | —                      |
+| `postgres.url`         | The R2DBC URL of the PostgreSQL database.                           |       No | `r2dbc:postgresql://localhost:5432/postgres` | `POSTGRES_URL`         |
+| `postgres.user`        | The username for the PostgreSQL database.                           |       No | `postgres`                                   | `POSTGRES_USER`        |
+| `postgres.password`    | The password for the PostgreSQL database.                           |       No | `postgres`                                   | `POSTGRES_PASSWORD`    |
+| `slack.bot.token`      | The Slack bot token.                                                |  **Yes** | —                                            | `SLACK_BOT_TOKEN`      |
+| `slack.user.token`     | The Slack user token.                                               |  **Yes** | —                                            | `SLACK_USER_TOKEN`     |
+| `slack.app.token`      | The Slack app token used for Socket Mode.                           |       No | Empty                                        | `SLACK_APP_TOKEN`      |
+| `slack.signing.secret` | The Slack Signing Secret to verify requests from slack in HTTP Mode |       No | Empty                                        | `SLACK_APP_TOKEN`      |
+| `slack.channel.review` | The Slack channel used for reviews.                                 |  **Yes** | —                                            | `SLACK_CHANNEL_REVIEW` |
+| `slack.channel.log`    | The Slack channel used for review logs.                             |  **Yes** | —                                            | `SLACK_CHANNEL_LOG`    |
+| `slack.team.id`        | The Slack team ID.                                                  |  **Yes** | —                                            | `SLACK_TEAM_ID`        |
+| `socket.mode`          | Whether to use Slack Socket Mode instead of the HTTP API.           |       No | `false`                                      | `SOCKET_MODE`          |
+
+To restrict a scope, open the `restricted_scope` table in the database and add a new row with the scope you want to restrict.  
+The format is the following: `<scope>`, `<type: ALLOWED|RESTRICTED|ALLOWED_FOR_UNVERIFIED>`, `<scopeType: BOTH|USER|BOT>`, `<review: bool>`
+- `scope`: The scope to restrict. You can alos use a pattern like `admin.*` to restrict all scopes starting with `admin.` or `*:read` to restrict all scopes ending with `:read`
+- `type`: The type of the restriction: `ALLOWED` means allowed for all verified users, `RESTRICTED` means restricted for all users and `ALLOWED_FOR_UNVERIFIED` means even allowed for unverified users.
+  - If a scope is not in the database, it is allowed for verified users, but restricted for unverified users.
+- `scopeType`: The type of the scope: `BOTH` means both user and bot scopes, `USER` means only user scopes, `BOT` means only bot scopes.
+- `review`: Whether to require a review for this scope.
+  - `false`: A request containing this scope is automatically rejected.
+  - `true`: A request containing this scope is forwarded to the review team.
+  - This is only used for `RESTRICTED` scopes.
+
+**Adding a team member:**  
+Open the `approve_team_member` table and add a new row with the id of the user you want to add, set the `since` to the current date and time.
 
 #### HTTP API
 
