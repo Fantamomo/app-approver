@@ -70,6 +70,13 @@ object Config {
         canBeSetByEnv = true
     )
 
+    val SLACK_SIGNING_SECRET: String by string(
+        key = "slack.signing.secret",
+        description = "The Slack signing secret (Used to verify HTTP requests from slack)",
+        default = "",
+        canBeSetByEnv = true
+    )
+
     val SLACK_CHANNEL_REVIEW: String by string(
         key = "slack.channel.review",
         description = "The Slack channel for reviews.",
