@@ -31,7 +31,7 @@ sealed interface ScopeMatcher {
 
         private val regex: Regex = buildRegex(pattern)
 
-        override fun match(scope: String) = pattern == "*" || regex.matches(scope)
+        override fun match(scope: String) = regex.matches(scope)
 
         private fun buildRegex(pattern: String): Regex {
             val regex = buildString {
@@ -51,10 +51,25 @@ sealed interface ScopeMatcher {
         }
     }
 
+    data class RegexScopeMatcher(val pattern: String) : ScopeMatcher {
+        val regex: Regex = Regex(pattern)
+        override val priority: Int = 4
+
+        override fun match(scope: String) = regex.matches(scope)
+
+    }
+
+    data object AllScopeMatcher : ScopeMatcher {
+        override val priority: Int = Int.MAX_VALUE
+        override fun match(scope: String) = true
+    }
+
     companion object {
-        val ALL_SCOPES = WildcardScopeMatcher("*")
+
+        val ALL_SCOPES = AllScopeMatcher
 
         fun fromString(scope: String): ScopeMatcher {
+            if (scope.startsWith('/')) return RegexScopeMatcher(scope.substring(1))
             val starIndex = scope.indexOf('*')
             if (starIndex != -1) {
                 if (scope.length == 1) return ALL_SCOPES
