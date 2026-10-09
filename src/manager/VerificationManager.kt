@@ -128,7 +128,7 @@ object VerificationManager {
                     reason = RequestDecisionReason.USER_VERIFIED
                 )
 
-                SlackManager.approveApp(record.appId, record.teamId, record.requestId)
+                SlackManager.approveApp(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
 
                 SlackWorkflowService.updateReviewMessage(
                     record = record,
