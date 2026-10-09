@@ -128,6 +128,38 @@ object SlackManager {
     }
 
     suspend fun sendEphemeral(
+        responseUrl: Url,
+        builder: LayoutBlockDsl.() -> Unit
+    ) {
+        require(responseUrl.host == "hooks.slack.com") { "Invalid response URL: $responseUrl" }
+        try {
+            val blocks = withBlocks(builder)
+
+            val body = com.google.gson.JsonObject().apply {
+                add("blocks", SharedData.gson.toJsonTree(blocks))
+            }
+
+            val response = RateLimits.CHAT_POST_EPHEMERAL.withLimit {
+                SharedData.httpClient.post(responseUrl) {
+                    bearerAuth(Config.SLACK_BOT_TOKEN)
+                    contentType(ContentType.Application.Json)
+                    setBody(SharedData.gson.toJson(body))
+                }
+            }
+
+            val text = response.bodyAsText()
+
+            if (text != "ok") {
+                logger.error("Failed to post ephemeral message within interaction ($responseUrl): $text")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("Error sending ephemeral message within interaction ($responseUrl)", e)
+        }
+    }
+
+    suspend fun sendEphemeral(
         channel: String,
         userId: String,
         threadTs: String? = null,
@@ -673,6 +705,8 @@ object SlackManager {
             }
         }
 
+//        logger.info("Received Slack Socket Mode event: $json")
+
         val envelopeId = json["envelope_id"]?.jsonPrimitive?.contentOrNull
 
         if (envelopeId.isNullOrBlank()) {
@@ -706,6 +740,8 @@ object SlackManager {
         type: String?,
         json: JsonObject
     ) {
+//        logger.info("Received Slack Socket Mode type: $type")
+
         when (type) {
             "events_api" -> {
                 val payload = json["payload"]?.jsonObject ?: return
@@ -758,8 +794,10 @@ object SlackManager {
             "slash_commands" -> {
                 val payload = json["payload"]?.jsonObject ?: return
 
+//                logger.info("Received Slack slash command payload: $payload")
+
                 try {
-                    SlackInteractionHandler.handlePayload(payload)
+                    SlackInteractionHandler.handlePayload(payload, type = "slash_commands")
                 } catch (e: Exception) {
                     logger.error("Failed to process Slack slash command", e)
                 }
