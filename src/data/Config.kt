@@ -89,11 +89,11 @@ object Config {
         canBeSetByEnv = true
     )
 
-    val SLACK_TEAM_ID: String by string(
-        key = "slack.team.id",
-        description = "The Slack team ID.",
-        canBeSetByEnv = true
-    )
+//    val SLACK_TEAM_ID: String by string(
+//        key = "slack.team.id",
+//        description = "The Slack team ID.",
+//        canBeSetByEnv = true
+//    )
 
     val SOCKET_MODE: Boolean by boolean(
         key = "socket.mode",
