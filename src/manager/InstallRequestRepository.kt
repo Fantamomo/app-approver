@@ -538,4 +538,103 @@ object InstallRequestRepository {
             throw e
         }
     }
+
+    suspend fun getTeamMembers(): List<String> {
+        return try {
+            DatabaseManager.transaction {
+                ApproveTeamMemberTable.select(ApproveTeamMemberTable.userId)
+                    .where { ApproveTeamMemberTable.deleted eq false }
+                    .map { it[ApproveTeamMemberTable.userId] }
+                    .toList()
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logger.error("Error occurred while loading team members", e)
+            throw e
+        }
+    }
+
+    suspend fun addTeamMember(member: String): Boolean {
+        return try {
+            DatabaseManager.transaction {
+                val existing = ApproveTeamMemberTable.select(ApproveTeamMemberTable.deleted)
+                    .where { ApproveTeamMemberTable.userId eq member }
+                    .singleOrNull()
+                when {
+                    existing == null -> {
+                        ApproveTeamMemberTable.insert {
+                            it[ApproveTeamMemberTable.userId] = member
+                            it[ApproveTeamMemberTable.since] = Clock.System.now()
+                        }
+                        true
+                    }
+
+                    existing[ApproveTeamMemberTable.deleted] -> {
+                        ApproveTeamMemberTable.update({ ApproveTeamMemberTable.userId eq member }) {
+                            it[ApproveTeamMemberTable.deleted] = false
+                            it[ApproveTeamMemberTable.since] = Clock.System.now()
+                        }
+                        true
+                    }
+
+                    else -> false
+                }
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logger.error("Error occurred while adding team member $member", e)
+            throw e
+        }
+    }
+
+    suspend fun removeTeamMember(member: String): Boolean {
+        return try {
+            DatabaseManager.transaction {
+                ApproveTeamMemberTable.update({
+                    (ApproveTeamMemberTable.userId eq member) and (ApproveTeamMemberTable.deleted eq false)
+                }) {
+                    it[ApproveTeamMemberTable.deleted] = true
+                } > 0
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logger.error("Error occurred while removing team member $member", e)
+            throw e
+        }
+    }
+
+    suspend fun setScope(pattern: String, level: RestrictionLevel, type: ScopeType, requiresReview: Boolean) {
+        try {
+            DatabaseManager.transaction {
+                RestrictedScopesTable.deleteWhere {
+                    (RestrictedScopesTable.scope eq pattern) and (RestrictedScopesTable.scopeType eq type)
+                }
+                RestrictedScopesTable.insert {
+                    it[RestrictedScopesTable.scope] = pattern
+                    it[RestrictedScopesTable.restricted] = level
+                    it[RestrictedScopesTable.scopeType] = type
+                    it[RestrictedScopesTable.review] = requiresReview
+                }
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logger.error("Error occurred while setting scope $pattern", e)
+            throw e
+        }
+    }
+
+    suspend fun resetScope(pattern: String, type: ScopeType): Int {
+        return try {
+            DatabaseManager.transaction {
+                RestrictedScopesTable.deleteWhere {
+                    (RestrictedScopesTable.scope eq pattern) and
+                            (if (type == ScopeType.BOTH) Op.TRUE else (RestrictedScopesTable.scopeType eq type))
+                }
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logger.error("Error occurred while resetting scope $pattern", e)
+            throw e
+        }
+    }
 }

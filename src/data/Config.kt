@@ -102,6 +102,20 @@ object Config {
         canBeSetByEnv = true
     )
 
+    val ADMIN_USERS: String by string(
+        key = "admin.users",
+        description = "Comma separated list of users with permission to the admin commands.",
+        default = "",
+        canBeSetByEnv = true
+    )
+
+    val SLACK_SLASH_COMMAND: String by string(
+        key = "slack.slash.command",
+        description = "The Slack slash command. (Used to react to the slash command and for messages)",
+        default = "/app-approver",
+        canBeSetByEnv = true
+    )
+
     fun init() {
         if (properties.isNotEmpty()) return
         ensureConfigExists()

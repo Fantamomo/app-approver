@@ -7,6 +7,7 @@ import com.fantamomo.slack.approver.manager.AppManager
 import com.fantamomo.slack.approver.model.AppRequested
 import com.fantamomo.slack.approver.slack.SlackInteractionHandler
 import com.fantamomo.slack.approver.slack.SlackWorkflowService
+import com.fantamomo.slack.approver.utils.SlackRequestVerifier
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -18,7 +19,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
-import utils.SlackRequestVerifier
 
 private object Routing
 

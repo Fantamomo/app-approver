@@ -1,6 +1,7 @@
 package com.fantamomo.slack.approver.slack
 
 import com.fantamomo.slack.approver.data.Config
+import com.fantamomo.slack.approver.data.Constants.BULLET
 import com.fantamomo.slack.approver.manager.InstallRequestRepository
 import com.fantamomo.slack.approver.manager.SlackManager
 import com.fantamomo.slack.approver.manager.VerificationManager
@@ -9,6 +10,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.slack.api.model.block.composition.BlockCompositions.markdownText
 import com.slack.api.model.block.element.RichTextSectionElement
+import io.ktor.http.*
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Clock
@@ -141,7 +143,7 @@ object SlackWorkflowService {
             request.scopes.joinToString("\n") { s ->
                 val sens = if (s.isSensitive) " (sensitive)" else ""
                 val opt = if (s.isOptional) " (optional)" else ""
-                "- `${s.name}` [${s.tokenType}]$sens$opt"
+                "$BULLET `${s.name}` [${s.tokenType}]$sens$opt"
             }
         }
 
@@ -154,19 +156,19 @@ object SlackWorkflowService {
             if (!request.message.isNullOrBlank()) append("*User Message:* ${request.message}\n")
 
             append("\n*App Details:*\n")
-            append("- ID: `${request.app.id}`\n")
-            append("- Name: ${request.app.name}\n")
-            append("- Developer Type: ${request.app.developerType}\n")
-            if (request.app.description.isNotBlank()) append("- Description: ${request.app.description}\n")
+            append("$BULLET ID: `${request.app.id}`\n")
+            append("$BULLET Name: ${request.app.name}\n")
+            append("$BULLET Developer Type: ${request.app.developerType}\n")
+            if (request.app.description.isNotBlank()) append("$BULLET Description: ${request.app.description}\n")
 
             append("\n*Requested Scopes:*\n$scopesText\n")
 
             append("\n*Initial Evaluation:*\n")
-            append("- Status: ${decision.status}\n")
-            append("- Reason: ${decision.reason}\n")
-            if (decision.explanation.isNotBlank()) append("- Explanation: ${decision.explanation}\n")
+            append("$BULLET Status: ${decision.status}\n")
+            append("$BULLET Reason: ${decision.reason}\n")
+            if (decision.explanation.isNotBlank()) append("$BULLET Explanation: ${decision.explanation}\n")
             if (decision.relevantRestrictedScopes.isNotEmpty()) {
-                append("- Relevant Scopes: `")
+                append("$BULLET Relevant Scopes: `")
                 append(decision.relevantRestrictedScopes.joinToString(", "))
                 append("`\n")
             }
@@ -590,6 +592,66 @@ object SlackWorkflowService {
         }
     }
 
+    suspend fun sendUnauthorizedMessage(responseUrl: Url) {
+        SlackManager.sendEphemeral(
+            responseUrl = responseUrl,
+        ) {
+            section {
+                markdownText(":no_entry_sign: Sorry, you are not authorized to perform this action.")
+            }
+        }
+    }
+
+    suspend fun sendHelpMessage(responseUrl: Url) {
+        SlackManager.sendEphemeral(responseUrl = responseUrl) {
+            section {
+                markdownText(buildString {
+                    val B = BULLET
+
+                    appendLine("Usage info for `${Config.SLACK_SLASH_COMMAND}`:")
+                    appendLine()
+                    appendLine("$B `team`: Shows all team members")
+                    appendLine("    $B `add <user>`: Adds a user to the team")
+                    appendLine("    $B `remove <user>`: Removes a user from the team")
+                    appendLine("$B `scopes`: Lists the current restricted/allowed scopes")
+                    appendLine("    $B `allow <scope> [type]`: Allows a scope")
+                    appendLine("    $B `restrict <scope> [type] [review]`: Restricts a scope")
+                    appendLine("    $B `reset <scope> [type]`: Resets the config for a scope")
+                    appendLine("    $B `allow-unverified <scope> [type]`: Allows a scope for unverified users")
+                    appendLine("$B `help`: Shows this help message")
+                    appendLine()
+                    appendLine("Args:")
+                    appendLine("$B `<scope>`: The scope to match")
+                    appendLine("    $B Can be directly the scope, to only match it")
+                    appendLine("    $B Or use a `*` for wildcard matching: `admin.*` (every scope starting with `admin.`), `*:read` (every scope ending with `:read`)")
+                    appendLine("$B `[type]`: Can be one of the following")
+                    appendLine("    $B `USER`: The user scope")
+                    appendLine("    $B `BOT`: The bot scope")
+                    appendLine("    $B `BOTH`: Both user and bot scope (default)")
+                    appendLine("$B `[review]`: bool")
+                    appendLine("    $B `true`: App is send to the review team")
+                    appendLine("    $B `false`: App is directly declined (default)")
+                })
+            }
+        }
+    }
+
+    suspend fun sendUnknownCommandMessage(responseUrl: Url) {
+        SlackManager.sendEphemeral(responseUrl = responseUrl) {
+            section {
+                markdownText(":question: This command is not recognized, please notify an admin. (Maybe wrong command in config)")
+            }
+        }
+    }
+
+    suspend fun sendUnknownArgMessage(responseUrl: Url) {
+        SlackManager.sendEphemeral(responseUrl = responseUrl) {
+            section {
+                markdownText(":question: Unknown argument")
+            }
+        }
+    }
+
     suspend fun logManualTransparencyEvent(
         appName: String,
         userId: String,
@@ -728,7 +790,7 @@ object SlackWorkflowService {
                         } else ""
 
                         section {
-                            markdownText("*App:* $appLink (`${req.appId}`) • $statusText$resolvedByText$reviewLink")
+                            markdownText("*App:* $appLink (`${req.appId}`) $BULLET $statusText$resolvedByText$reviewLink")
                         }
                     }
                 }

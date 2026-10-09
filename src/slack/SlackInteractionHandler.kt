@@ -1,36 +1,70 @@
 package com.fantamomo.slack.approver.slack
 
 import com.fantamomo.slack.approver.data.Config
+import com.fantamomo.slack.approver.manager.CommandManager
 import com.fantamomo.slack.approver.manager.InstallRequestRepository
 import com.fantamomo.slack.approver.manager.SlackManager
 import com.fantamomo.slack.approver.manager.VerificationManager
 import com.fantamomo.slack.approver.model.RequestDecision
 import com.fantamomo.slack.approver.model.RequestDecisionReason
 import com.fantamomo.slack.approver.model.RequestStatus
+import io.ktor.http.*
 import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
 
 object SlackInteractionHandler {
     private val logger = LoggerFactory.getLogger(SlackInteractionHandler::class.java)
 
-    suspend fun handlePayload(payloadJsonString: String) {
+    private val adminUsers = Config.ADMIN_USERS
+        .split(",")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && (it[0] == 'W' || it[0] == 'U') }
+
+    suspend fun handlePayload(payloadJsonString: String, type: String? = null) {
         val element = Json.parseToJsonElement(payloadJsonString)
         val jsonObject = element.jsonObject
-        handlePayload(jsonObject)
+        handlePayload(jsonObject, type)
     }
 
-    suspend fun handlePayload(jsonObject: JsonObject) {
+    suspend fun handlePayload(jsonObject: JsonObject, type: String? = null) {
         try {
-            val type = jsonObject["type"]?.jsonPrimitive?.content ?: return
+            val type = type ?: jsonObject["type"]?.jsonPrimitive?.content ?: return
 
             when (type) {
                 "block_actions" -> handleBlockActions(jsonObject)
                 "view_submission" -> handleViewSubmission(jsonObject)
+                "slash_commands" -> handleSlashCommands(jsonObject)
                 else -> logger.info("Unhandled Slack interaction type: $type")
             }
         } catch (e: Exception) {
             logger.error("Error processing Slack interaction payload", e)
         }
+    }
+
+    private suspend fun handleSlashCommands(jsonObject: JsonObject) {
+        val command = jsonObject["command"]?.jsonPrimitive?.contentOrNull
+            ?: throw IllegalArgumentException("command is missing")
+        val responseUrl = jsonObject["response_url"]?.jsonPrimitive?.contentOrNull
+            ?.let { Url(it) }
+            ?: throw IllegalArgumentException("response_url is missing")
+        if (command != Config.SLACK_SLASH_COMMAND) {
+            logger.warn("Received slash command with unexpected command '$command'. Command must be '${Config.SLACK_SLASH_COMMAND}', maybe check the config or the app's slash command configuration.")
+            SlackWorkflowService.sendUnknownCommandMessage(responseUrl)
+            return
+        }
+        val userId = jsonObject["user_id"]?.jsonPrimitive?.contentOrNull
+            ?: throw IllegalArgumentException("user_id is missing")
+        if (userId !in adminUsers) {
+            logger.warn("Unauthorized user attempted to use slash command: $userId")
+            sendUnauthorizedError(responseUrl)
+            return
+        }
+        val text = jsonObject["text"]?.jsonPrimitive?.contentOrNull ?: throw IllegalArgumentException("text is missing")
+        if (text.isBlank()) {
+            SlackWorkflowService.sendHelpMessage(responseUrl)
+            return
+        }
+        CommandManager.execute(responseUrl, text.trim().split(Regex("\\s+")))
     }
 
     private suspend fun handleBlockActions(json: JsonObject) {
@@ -451,5 +485,12 @@ object SlackInteractionHandler {
     private suspend fun sendUnauthorizedError(userId: String, requestId: String) {
         val record = InstallRequestRepository.getRequest(requestId) ?: return
         SlackWorkflowService.sendUnauthorizedMessage(Config.SLACK_CHANNEL_REVIEW, record.reviewMessageTs, userId)
+    }
+
+    private suspend fun sendUnauthorizedError(responseUrl: String) = SlackWorkflowService.sendUnauthorizedMessage(Url(responseUrl))
+
+    private suspend fun sendUnauthorizedError(responseUrl: Url) {
+        require(responseUrl.host == "hooks.slack.com") { "Invalid response URL: $responseUrl" }
+        SlackWorkflowService.sendUnauthorizedMessage(responseUrl)
     }
 }
