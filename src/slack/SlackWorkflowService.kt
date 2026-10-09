@@ -8,8 +8,9 @@ import com.fantamomo.slack.approver.manager.VerificationManager
 import com.fantamomo.slack.approver.model.*
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import com.slack.api.model.block.composition.BlockCompositions.markdownText
 import com.slack.api.model.block.element.RichTextSectionElement
+import com.slack.api.model.kotlin_extension.block.ActionsBlockBuilder
+import com.slack.api.model.kotlin_extension.block.dsl.LayoutBlockDsl
 import io.ktor.http.*
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
@@ -22,6 +23,8 @@ object SlackWorkflowService {
     private val logger = LoggerFactory.getLogger(SlackWorkflowService::class.java)
 
     private val appHomeCheckCooldown = ConcurrentHashMap<String, Instant>()
+
+    private val homeAdminMode = ConcurrentHashMap<String, Boolean>()
 
     private fun statusEmoji(status: RequestStatus): String = when (status) {
         RequestStatus.PENDING_REVIEW -> ":hourglass_flowing_sand:"
@@ -66,12 +69,14 @@ object SlackWorkflowService {
     suspend fun postInitialReviewMessage(
         request: AppRequested,
         isUserVerified: Boolean,
-        decision: DecisionResult
+        decision: DecisionResult,
+        stateId: String
     ): String? {
         val appUrl = request.app.appHomepageUrl.ifBlank { request.app.appDirectoryUrl }
         val appLink = if (appUrl.isNotBlank()) "<$appUrl|${request.app.name}>" else request.app.name
         val statusText = "${statusEmoji(decision.status)} *${statusLabel(decision.status, null)}*"
         val reasonText = formatReason(decision.reason, null, null)
+        val buttonValue = "${request.id}:$stateId"
 
         val messageTs = SlackManager.sendMessage(Config.SLACK_CHANNEL_REVIEW) {
             header {
@@ -85,20 +90,20 @@ object SlackWorkflowService {
                     button {
                         text("Undo", true)
                         actionId("review_undo")
-                        value(request.id)
+                        value(buttonValue)
                         style("primary")
                     }
                     button {
                         text("Restrict", true)
                         actionId("review_restrict")
-                        value(request.id)
+                        value(buttonValue)
                         style("danger")
                     }
                 } else if (decision.status == RequestStatus.DENIED) {
                     button {
                         text("Override (Approve)", true)
                         actionId("review_approve")
-                        value(request.id)
+                        value(buttonValue)
                         style("primary")
                     }
 //                    button {
@@ -110,26 +115,26 @@ object SlackWorkflowService {
                     button {
                         text("Restrict", true)
                         actionId("review_restrict")
-                        value(request.id)
+                        value(buttonValue)
                         style("danger")
                     }
                 } else {
                     button {
                         text("Approve", true)
                         actionId("review_approve")
-                        value(request.id)
+                        value(buttonValue)
                         style("primary")
                     }
                     button {
                         text("Deny", true)
                         actionId("review_deny")
-                        value(request.id)
+                        value(buttonValue)
                         style("danger")
                     }
                     button {
                         text("Restrict", true)
                         actionId("review_restrict")
-                        value(request.id)
+                        value(buttonValue)
                         style("danger")
                     }
                 }
@@ -205,73 +210,12 @@ object SlackWorkflowService {
                 markdownText("*App:* $appLink (`${record.appId}`)\n*User:* <@${record.userId}>\n*Status:* $statusText\n*Reason:* $reasonText")
             }
             actions {
-                when {
-                    resolution == RequestDecision.UNDONE || reason == RequestDecisionReason.RESOLUTION_UNDONE -> {
-                        button {
-                            text("Restrict", true)
-                            actionId("review_restrict")
-                            value(record.requestId)
-                            style("danger")
-                        }
-                    }
-
-                    resolution == RequestDecision.RESTRICTED -> {
-                        button {
-                            text("Undo", true)
-                            actionId("review_undo")
-                            value(record.requestId)
-                            style("primary")
-                        }
-                    }
-
-                    resolution == RequestDecision.WITHDRAWN -> {
-                        button {
-                            text("Restrict", true)
-                            actionId("review_restrict")
-                            value(record.requestId)
-                            style("danger")
-                        }
-                    }
-
-                    resolution == RequestDecision.APPROVED ||
-                            status == RequestStatus.APPROVED ||
-                            resolution == RequestDecision.DENIED -> {
-                        button {
-                            text("Undo", true)
-                            actionId("review_undo")
-                            value(record.requestId)
-                            style("primary")
-                        }
-                        button {
-                            text("Restrict", true)
-                            actionId("review_restrict")
-                            value(record.requestId)
-                            style("danger")
-                        }
-                    }
-
-                    else -> {
-                        // Pending review or internally blocked but still reviewable
-                        button {
-                            text("Approve", true)
-                            actionId("review_approve")
-                            value(record.requestId)
-                            style("primary")
-                        }
-                        button {
-                            text("Deny", true)
-                            actionId("review_deny")
-                            value(record.requestId)
-                            style("danger")
-                        }
-                        button {
-                            text("Restrict", true)
-                            actionId("review_restrict")
-                            value(record.requestId)
-                            style("danger")
-                        }
-                    }
-                }
+                reviewButtons(
+                    record.stateId?.let { "${record.requestId}:$it" } ?: record.requestId,
+                    status,
+                    resolution,
+                    reason
+                )
             }
         }
     }
@@ -407,7 +351,7 @@ object SlackWorkflowService {
                     RequestDecisionReason.ENTERPRISE_INSTALL -> {
                         SlackManager.sendDm(userId) {
                             section {
-                                markdownText(":no_entry_sign: Your installation request for *$appName* was declined because you tried to install it org wide. We typically don't allow this. If you really need to install it org wide, you can request a manual review. If you don't withdraw your request and disabled org-wide")
+                                markdownText(":no_entry_sign: Your installation request for *$appName* was declined because you tried to install it org wide. We typically don't allow this. If you really need to install it org wide, you can request a manual review. If you don't, withdraw your request and disabled org-wide installation")
                             }
                             actions {
                                 button {
@@ -580,14 +524,30 @@ object SlackWorkflowService {
         SlackManager.sendTextMessage(Config.SLACK_CHANNEL_LOG, eventText)
     }
 
-    suspend fun sendUnauthorizedMessage(channel: String, threadId: String?, userId: String) {
+    suspend fun openUnauthorizedMessage(triggerId: String) {
+        val view = buildInfoModal(
+            "Unauthorized",
+            ":no_entry_sign: Sorry, you are not authorized to perform this action."
+        )
+        SlackManager.openView(triggerId, view)
+    }
+
+    suspend fun openStateMismatchMessage(triggerId: String) {
+        val view = buildInfoModal(
+            "State Mismatch",
+            ":no_entry_sign: Sorry, there's a conflict\n\nThe request may have been updated by another user. Please refresh and try again.\n(If the error persists, please contact the administrator)"
+        )
+        SlackManager.openView(triggerId, view)
+    }
+
+    suspend fun sendStateMismatch(channel: String, threadId: String?, userId: String) {
         SlackManager.sendEphemeral(
             channel = channel,
             threadTs = threadId,
             userId = userId,
         ) {
             section {
-                markdownText(":no_entry_sign: Sorry, you are not authorized to perform this action.")
+                markdownText(":no_entry_sign: Sorry, state mismatch. Please try again. If this error persists, please contact the administrator.")
             }
         }
     }
@@ -689,24 +649,35 @@ object SlackWorkflowService {
 
     suspend fun handleAppHomeOpened(userId: String) {
         val now = Clock.System.now()
-        val lastCheck = appHomeCheckCooldown[userId]
-        if (lastCheck == null || (now - lastCheck) >= 30.seconds) {
-            appHomeCheckCooldown[userId] = now
-            val isVerified = VerificationManager.isVerified(userId, ignoreCache = true)
-            if (isVerified) {
-                VerificationManager.handleUserBecameVerified(userId)
+        if (!VerificationManager.isVerifiedCached(userId)) {
+            val lastCheck = appHomeCheckCooldown[userId]
+            if (lastCheck == null || (now - lastCheck) >= 30.seconds) {
+                appHomeCheckCooldown[userId] = now
+                val isVerified = VerificationManager.isVerified(userId, ignoreCache = true)
+                if (isVerified) {
+                    VerificationManager.handleUserBecameVerified(userId)
+                }
             }
         }
         publishAppHome(userId)
     }
 
     suspend fun publishAppHome(userId: String) {
+        val isAdmin = SlackInteractionHandler.isAdmin(userId)
+        val adminMode = isAdmin && homeAdminMode[userId] == true
+        if (adminMode) {
+            publishAdminHome(userId)
+            return
+        }
+
         val isTeamMember = InstallRequestRepository.isTeamMemberAuthorized(userId)
         if (isTeamMember) {
-            val pendingRequests = InstallRequestRepository.getPendingRequests(limit = 15)
-            val recentResolved = InstallRequestRepository.getRecentResolvedRequests(limit = 10)
+            val pendingRequests = InstallRequestRepository.getPendingRequests(limit = 10)
+            val autoDenied = InstallRequestRepository.getAutoDeniedRequests(limit = 10)
+            val recentResolved = InstallRequestRepository.getRecentResolvedRequests(limit = 8)
 
             SlackManager.publishHomeView(userId) {
+                if (isAdmin) homeSwitch(false)
                 header {
                     text("App Approval Dashboard", true)
                 }
@@ -723,76 +694,24 @@ object SlackWorkflowService {
                         markdownText(":tada: No pending installation requests to review!")
                     }
                 } else {
-                    for (req in pendingRequests) {
-                        val appUrl = req.appUrl
-                        val appLink = if (!appUrl.isNullOrBlank()) "<$appUrl|${req.appName}>" else req.appName
-                        val statusText = "${statusEmoji(req.status)} *${statusLabel(req.status, req.resolution)}*"
-                        val reviewLink = if (!req.reviewMessageTs.isNullOrBlank()) {
-                            buildString {
-                                append(" - ")
-                                append("<https://slack.com/archives/")
-                                append(Config.SLACK_CHANNEL_REVIEW)
-                                append("/p")
-                                append(req.reviewMessageTs.replace(".", ""))
-                                append("|View Thread>")
-                            }
-                        } else ""
+                    for (req in pendingRequests) reviewEntry(req)
+                }
 
-                        section {
-                            markdownText(
-                                "*App:* $appLink (`${req.appId}`)\n*User:* <@${req.userId}>\n" +
-                                        "*Status:* $statusText$reviewLink\n" +
-                                        "*Reason:* ${formatReason(req.automaticDecisionReason, req.resolutionMessage, req.resolvedBy)}"
-                            )
-                        }
-                        actions {
-                            button {
-                                text("Approve", true)
-                                actionId("review_approve")
-                                value(req.requestId)
-                                style("primary")
-                            }
-                            button {
-                                text("Deny", true)
-                                actionId("review_deny")
-                                value(req.requestId)
-                                style("danger")
-                            }
-                            button {
-                                text("Restrict", true)
-                                actionId("review_restrict")
-                                value(req.requestId)
-                                style("danger")
-                            }
-                        }
-                        divider()
+                if (autoDenied.isNotEmpty()) {
+                    header {
+                        text("Automatically Denied (${autoDenied.size})", true)
                     }
+                    section {
+                        markdownText("These requests were denied automatically and need no review. You can still override them.")
+                    }
+                    for (req in autoDenied) reviewEntry(req)
                 }
 
                 if (recentResolved.isNotEmpty()) {
                     header {
                         text("Recent Decisions", true)
                     }
-                    for (req in recentResolved) {
-                        val appUrl = req.appUrl
-                        val appLink = if (!appUrl.isNullOrBlank()) "<$appUrl|${req.appName}>" else req.appName
-                        val statusText = "${statusEmoji(req.status)} *${statusLabel(req.status, req.resolution)}*"
-                        val resolvedByText = if (req.resolvedBy != null) " by <@${req.resolvedBy}>" else ""
-                        val reviewLink = if (!req.reviewMessageTs.isNullOrBlank()) {
-                            buildString {
-                                append(" - ")
-                                append("<https://slack.com/archives/")
-                                append(Config.SLACK_CHANNEL_REVIEW)
-                                append("/p")
-                                append(req.reviewMessageTs.replace(".", ""))
-                                append("|View Thread>")
-                            }
-                        } else ""
-
-                        section {
-                            markdownText("*App:* $appLink (`${req.appId}`) $BULLET $statusText$resolvedByText$reviewLink")
-                        }
-                    }
+                    for (req in recentResolved) reviewEntry(req, false)
                 }
             }
         } else {
@@ -800,11 +719,14 @@ object SlackWorkflowService {
             val isVerified = VerificationManager.isVerified(userId)
 
             SlackManager.publishHomeView(userId) {
+                if (isAdmin) homeSwitch(false)
                 header {
                     text("My App Installation Requests", true)
                 }
                 if (!isVerified) {
-                    markdownText(":warning: *Your account is not verified.* <https://auth.hackclub.com|Verify here>")
+                    section {
+                        markdownText(":warning: *Your account is not verified.* <https://auth.hackclub.com|Verify here>")
+                    }
                 }
                 divider()
 
@@ -855,6 +777,38 @@ object SlackWorkflowService {
         }
     }
 
+    fun buildInfoModal(title: String, message: String): JsonObject {
+        val view = JsonObject()
+        view.addProperty("type", "modal")
+
+        val titleObj = JsonObject()
+        titleObj.addProperty("type", "plain_text")
+        titleObj.addProperty("text", title.take(24))
+        titleObj.addProperty("emoji", true)
+        view.add("title", titleObj)
+
+        val closeObj = JsonObject()
+        closeObj.addProperty("type", "plain_text")
+        closeObj.addProperty("text", "OK")
+        closeObj.addProperty("emoji", true)
+        view.add("close", closeObj)
+
+        val blocks = JsonArray()
+
+        val section = JsonObject()
+        section.addProperty("type", "section")
+
+        val text = JsonObject()
+        text.addProperty("type", "mrkdwn")
+        text.addProperty("text", message)
+        section.add("text", text)
+        blocks.add(section)
+
+        view.add("blocks", blocks)
+
+        return view
+    }
+
     fun buildReasonModal(
         title: String,
         callbackId: String,
@@ -903,7 +857,10 @@ object SlackWorkflowService {
 
         val placeholderObj = JsonObject()
         placeholderObj.addProperty("type", "plain_text")
-        placeholderObj.addProperty("text", "Provide an explanation for this decision... (by the way, something has gone wrong)")
+        placeholderObj.addProperty(
+            "text",
+            "Provide an explanation for this decision..."
+        )
         elementObj.add("placeholder", placeholderObj)
 
         inputBlock.add("element", elementObj)
@@ -917,5 +874,203 @@ object SlackWorkflowService {
         val style = styleBuilder()
         style.builder()
         return style.build()
+    }
+
+    private fun ActionsBlockBuilder.reviewButtons(
+        buttonValue: String,
+        status: RequestStatus,
+        resolution: RequestDecision?,
+        reason: RequestDecisionReason?
+    ) {
+        when {
+            status == RequestStatus.DENIED && resolution == null -> {
+                button {
+                    text("Override (Approve)", true)
+                    actionId("review_approve")
+                    value(buttonValue)
+                    style("primary")
+                }
+                button {
+                    text("Restrict", true)
+                    actionId("review_restrict")
+                    value(buttonValue)
+                    style("danger")
+                }
+            }
+
+            resolution == RequestDecision.UNDONE || reason == RequestDecisionReason.RESOLUTION_UNDONE -> {
+                button {
+                    text("Restrict", true)
+                    actionId("review_restrict")
+                    value(buttonValue)
+                    style("danger")
+                }
+            }
+
+            resolution == RequestDecision.RESTRICTED -> {
+                button {
+                    text("Undo", true)
+                    actionId("review_undo")
+                    value(buttonValue)
+                    style("primary")
+                }
+            }
+
+            resolution == RequestDecision.WITHDRAWN -> {
+                button {
+                    text("Restrict", true)
+                    actionId("review_restrict")
+                    value(buttonValue)
+                    style("danger")
+                }
+            }
+
+            resolution == RequestDecision.APPROVED ||
+                    status == RequestStatus.APPROVED ||
+                    resolution == RequestDecision.DENIED -> {
+                button {
+                    text("Undo", true)
+                    actionId("review_undo")
+                    value(buttonValue)
+                    style("primary")
+                }
+                button {
+                    text("Restrict", true)
+                    actionId("review_restrict")
+                    value(buttonValue)
+                    style("danger")
+                }
+            }
+
+            else -> {
+                button {
+                    text("Approve", true)
+                    actionId("review_approve")
+                    value(buttonValue)
+                    style("primary")
+                }
+                button {
+                    text("Deny", true)
+                    actionId("review_deny")
+                    value(buttonValue)
+                    style("danger")
+                }
+                button {
+                    text("Restrict", true)
+                    actionId("review_restrict")
+                    value(buttonValue)
+                    style("danger")
+                }
+            }
+        }
+    }
+
+    private fun LayoutBlockDsl.reviewEntry(req: InstallRequestRecord, showButtons: Boolean = true) {
+        val appUrl = req.appUrl
+        val appLink = if (!appUrl.isNullOrBlank()) "<$appUrl|${req.appName}>" else req.appName
+        val statusText = "${statusEmoji(req.status)} *${statusLabel(req.status, req.resolution)}*"
+        val reviewLink = if (!req.reviewMessageTs.isNullOrBlank()) {
+            " - <https://slack.com/archives/${Config.SLACK_CHANNEL_REVIEW}/p${
+                req.reviewMessageTs.replace(
+                    ".",
+                    ""
+                )
+            }|View Thread>"
+        } else ""
+
+        section {
+            markdownText(
+                "*App:* $appLink (`${req.appId}`)\n*User:* <@${req.userId}>\n" +
+                        "*Status:* $statusText$reviewLink\n" +
+                        "*Reason:* ${formatReason(req.automaticDecisionReason, req.resolutionMessage, req.resolvedBy)}"
+            )
+        }
+        if (showButtons) {
+            actions {
+                reviewButtons(req.stateId?.let { "${req.requestId}:$it" } ?: req.requestId,
+                    req.status,
+                    req.resolution,
+                    null)
+            }
+        }
+        divider()
+    }
+
+    private fun LayoutBlockDsl.homeSwitch(adminMode: Boolean) {
+        actions {
+            button {
+                text("Team Home", true)
+                actionId("home_team")
+                value("team")
+                if (!adminMode) style("primary")
+            }
+            button {
+                text("Admin Home", true)
+                actionId("home_admin")
+                value("admin")
+                if (adminMode) style("primary")
+            }
+        }
+    }
+
+    suspend fun setHomeMode(userId: String, admin: Boolean, updateHome: Boolean = true) {
+        if (admin && !SlackInteractionHandler.isAdmin(userId)) return
+        homeAdminMode[userId] = admin
+        if (updateHome) {
+            publishAppHome(userId)
+        }
+    }
+
+    private suspend fun publishAdminHome(userId: String) {
+        val members = InstallRequestRepository.getTeamMembers()
+        val scopes = InstallRequestRepository.getRestrictedScopes()
+
+        val membersText =
+            if (members.isEmpty()) "No team members yet." else members.joinToString("\n") { "$BULLET <@$it>" }
+        val scopesText = if (scopes.isEmpty()) {
+            "No scope configuration exists yet."
+        } else {
+            buildString {
+                for (level in RestrictionLevel.entries) {
+                    val group = scopes.filter { it.level == level }.sortedBy { it.pattern }
+                    if (group.isEmpty()) continue
+                    append(
+                        when (level) {
+                            RestrictionLevel.RESTRICTED -> ":no_entry_sign: *Restricted*"
+                            RestrictionLevel.ALLOWED_FOR_UNVERIFIED -> ":unlock: *Allowed for unverified users*"
+                            RestrictionLevel.ALLOWED -> ":white_check_mark: *Allowed*"
+                        }
+                    )
+                    append('\n')
+                    for (s in group) {
+                        append("$BULLET `${s.pattern}` [${s.scopeType}]")
+                        if (level == RestrictionLevel.RESTRICTED) append(if (s.review) " – review" else " – declined")
+                        append('\n')
+                    }
+                    append('\n')
+                }
+            }.trim()
+        }
+
+        SlackManager.publishHomeView(userId) {
+            homeSwitch(true)
+            header {
+                text("Admin Dashboard", true)
+            }
+            divider()
+            header {
+                text("Team Members (${members.size})", true)
+            }
+            section {
+                markdownText(membersText.take(3000))
+            }
+            divider()
+            header {
+                text("Scope Configuration", true)
+            }
+            section {
+                markdownText(scopesText.take(3000))
+            }
+        }
     }
 }

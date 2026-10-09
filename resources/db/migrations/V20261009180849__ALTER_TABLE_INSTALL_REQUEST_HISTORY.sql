@@ -1,0 +1,1 @@
+ALTER TABLE install_request_history ADD state_id VARCHAR(20) NULL;

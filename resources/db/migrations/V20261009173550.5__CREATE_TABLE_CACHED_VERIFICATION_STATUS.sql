@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS cached_verification_status (user_id VARCHAR(20) PRIMARY KEY, verification_status VARCHAR(20) NOT NULL, verified BOOLEAN DEFAULT FALSE NOT NULL, main_account VARCHAR(20) NULL, last_checked TIMESTAMP NOT NULL);
+ALTER TABLE cached_verification_status ADD CONSTRAINT fk_cached_verification_status_main_account__user_id FOREIGN KEY (main_account) REFERENCES cached_verification_status(user_id) ON DELETE RESTRICT ON UPDATE RESTRICT;

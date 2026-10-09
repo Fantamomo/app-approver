@@ -117,7 +117,7 @@ object VerificationManager {
             )
 
             if (decision.status == RequestStatus.APPROVED) {
-                InstallRequestRepository.updateResolution(
+                val newStateId = InstallRequestRepository.updateResolution(
                     requestId = record.requestId,
                     newStatus = RequestStatus.APPROVED,
                     resolution = RequestDecision.APPROVED,
@@ -128,10 +128,10 @@ object VerificationManager {
                     reason = RequestDecisionReason.USER_VERIFIED
                 )
 
-                SlackManager.approveApp(record.appId, record.teamId, record.requestId)
+                SlackManager.approveApp(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
 
                 SlackWorkflowService.updateReviewMessage(
-                    record = record,
+                    record = record.copy(stateId = newStateId),
                     status = RequestStatus.APPROVED,
                     resolution = RequestDecision.APPROVED,
                     reason = RequestDecisionReason.USER_VERIFIED,
@@ -160,7 +160,7 @@ object VerificationManager {
                     ":white_check_mark: `${record.appName}` requested by <@$userId> was automatically approved after account verification."
                 )
             } else if (decision.status == RequestStatus.PENDING_REVIEW && record.status != RequestStatus.PENDING_REVIEW) {
-                InstallRequestRepository.updateStatus(
+                val stateId = InstallRequestRepository.updateStatus(
                     requestId = record.requestId,
                     newStatus = RequestStatus.PENDING_REVIEW,
                     actorId = null,
@@ -171,7 +171,7 @@ object VerificationManager {
                 )
 
                 SlackWorkflowService.updateReviewMessage(
-                    record = record,
+                    record = record.copy(stateId = stateId),
                     status = RequestStatus.PENDING_REVIEW,
                     resolution = null,
                     reason = decision.reason,
@@ -188,6 +188,18 @@ object VerificationManager {
                 }
             }
         }
+    }
+
+    fun isVerifiedCached(userId: String): Boolean {
+        val cached = cache[userId]
+        if (cached != null) {
+            if (Clock.System.now() < cached.second) {
+                return cached.first.verified
+            } else {
+                cache.remove(userId)
+            }
+        }
+        return false
     }
 
     suspend fun isVerified(userId: String, ignoreCache: Boolean = false): Boolean {
