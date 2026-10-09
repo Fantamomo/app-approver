@@ -25,7 +25,8 @@ private object Routing
 private val logger = LoggerFactory.getLogger(Routing::class.java)
 
 fun Application.configureRouting() {
-    val slackSigningSecret = Config.SLACK_SIGNING_SECRET
+    // there is only one possible way that SLACK_SIGNING_SECRET throws and that in tests
+    val slackSigningSecret = runCatching { Config.SLACK_SIGNING_SECRET }.getOrDefault("")
 
     routing {
         get("/") {
