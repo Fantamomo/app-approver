@@ -780,14 +780,14 @@ object SlackManager {
 
                 when (val eventType = event["type"]?.jsonPrimitive?.contentOrNull) {
                     "app_requested" -> {
-                        logger.info("Received app_requested event: {}", json)
+                        logger.debug("Received app_requested event: {}", json)
                         try {
                             val appRequested = SharedData.json.decodeFromJsonElement(
                                 AppRequested.serializer(),
                                 event["app_request"]?.jsonObject ?: throw Exception("Missing app_request field")
                             )
 
-                            logger.info("Received scopes for app_requested event: ${appRequested.scopes}")
+//                            logger.info("Received scopes for app_requested event: ${appRequested.scopes}")
 
                             AppManager.incomingAppRequest(appRequested)
                         } catch (e: Exception) {
