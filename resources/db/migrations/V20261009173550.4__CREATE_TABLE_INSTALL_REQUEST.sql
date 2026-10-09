@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS install_request_history (id BIGSERIAL PRIMARY KEY, request_id VARCHAR(20) NOT NULL, status VARCHAR(30) NOT NULL, actor_id VARCHAR(20) NULL, actor_type VARCHAR(20) NOT NULL, "action" VARCHAR(30) NOT NULL, reason VARCHAR(50) NULL, message VARCHAR(2000) NULL, created_at TIMESTAMP NOT NULL, CONSTRAINT fk_install_request_history_request_id__request_id FOREIGN KEY (request_id) REFERENCES install_request(request_id) ON DELETE RESTRICT ON UPDATE RESTRICT);
+CREATE INDEX install_request_history_request_id ON install_request_history (request_id);
+CREATE SEQUENCE IF NOT EXISTS install_request_history_id_seq START WITH 1 MINVALUE 1 MAXVALUE 9223372036854775807;

@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS slash_commands (command VARCHAR(32), app VARCHAR(20), active BOOLEAN NOT NULL, CONSTRAINT pk_slash_commands PRIMARY KEY (command, app));

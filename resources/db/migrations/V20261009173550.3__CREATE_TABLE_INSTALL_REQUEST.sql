@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS install_request_scope (id BIGSERIAL PRIMARY KEY, request_id VARCHAR(20) NOT NULL, scope VARCHAR(50) NOT NULL, description VARCHAR(500) NULL, "sensitive" BOOLEAN NOT NULL, token_type VARCHAR(20) NOT NULL, optional BOOLEAN NOT NULL, previous_approved BOOLEAN NOT NULL, restriction_level VARCHAR(22) NULL, CONSTRAINT fk_install_request_scope_request_id__request_id FOREIGN KEY (request_id) REFERENCES install_request(request_id) ON DELETE RESTRICT ON UPDATE RESTRICT);
+CREATE INDEX install_request_scope_request_id ON install_request_scope (request_id);
+CREATE INDEX install_request_scope_scope ON install_request_scope (scope);
+CREATE SEQUENCE IF NOT EXISTS install_request_scope_id_seq START WITH 1 MINVALUE 1 MAXVALUE 9223372036854775807;
