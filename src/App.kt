@@ -7,6 +7,7 @@ import com.fantamomo.slack.approver.manager.AppManager
 import com.fantamomo.slack.approver.manager.DatabaseManager
 import com.fantamomo.slack.approver.manager.SlackManager
 import com.fantamomo.slack.approver.manager.VerificationManager
+import com.fantamomo.slack.approver.utils.substringBeforeCount
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -200,12 +201,12 @@ object App {
             val scopeSummary = missingScopes.joinToString(", ") { scope ->
                 scope + (requiredScopes[scope]?.let { " ($it)" } ?: "")
             }
-            logger.error("Token $token is missing required scopes: $scopeSummary")
+            logger.error("Token ${token.substringBeforeCount("-", 1)} is missing required scopes: $scopeSummary")
             return null
         }
         val unnecessaryScopes = scopes.filter { it !in requiredScopes }.filter { it != "identify" }
         if (unnecessaryScopes.isNotEmpty()) {
-            logger.warn("Token $token has unnecessary scopes: ${unnecessaryScopes.joinToString(", ")}")
+            logger.warn("Token ${token.substringBeforeCount("-", 1)} has unnecessary scopes: ${unnecessaryScopes.joinToString(", ")}")
             logger.warn("Please remove unnecessary scopes from the token, to follow the least privilege principle.")
         }
         return jsonObject
