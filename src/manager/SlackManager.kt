@@ -342,12 +342,16 @@ object SlackManager {
     suspend fun approveApp(
         appId: String,
         teamId: String?,
+        enterpriseId: String?,
         requestId: String?
     ): Boolean {
+        require((teamId != null) != (enterpriseId != null)) { "Either teamId or enterpriseId must be provided, but not both" }
         return try {
             val body = com.google.gson.JsonObject().apply {
                 if (teamId != null) {
                     addProperty("team_id", teamId)
+                } else {
+                    addProperty("enterprise_id", enterpriseId)
                 }
                 if (requestId != null) {
                     addProperty("request_id", requestId)
@@ -384,12 +388,16 @@ object SlackManager {
     suspend fun cancelAppRequest(
         appId: String,
         teamId: String?,
+        enterpriseId: String?,
         requestId: String?
     ): Boolean {
+        require((teamId != null) != (enterpriseId != null)) { "Either teamId or enterpriseId must be provided, but not both" }
         return try {
             val body = com.google.gson.JsonObject().apply {
                 if (teamId != null) {
                     addProperty("team_id", teamId)
+                } else {
+                    addProperty("enterprise_id", enterpriseId)
                 }
                 if (requestId != null) {
                     addProperty("request_id", requestId)
@@ -426,8 +434,10 @@ object SlackManager {
     suspend fun restrictApp(
         appId: String,
         teamId: String?,
+        enterpriseId: String?,
         requestId: String?
     ): Boolean {
+        require((teamId != null) != (enterpriseId != null)) { "Either teamId or enterpriseId must be provided, but not both" }
         return try {
             val body = com.google.gson.JsonObject().apply {
                 if (requestId != null) {
@@ -437,6 +447,8 @@ object SlackManager {
                 }
                 if (teamId != null) {
                     addProperty("team_id", teamId)
+                } else {
+                    addProperty("enterprise_id", enterpriseId)
                 }
             }
 
@@ -455,7 +467,7 @@ object SlackManager {
             if (!ok) {
                 if (requestId != null && (json["error"] as? JsonPrimitive)?.contentOrNull == "request_already_resolved") {
 
-                    return restrictApp(appId, teamId, null)
+                    return restrictApp(appId, teamId, enterpriseId, null)
                 }
                 logger.warn("admin.apps.restrict failed for app $appId: $text")
             }
@@ -474,13 +486,13 @@ object SlackManager {
         teamId: String? = null,
         enterpriseId: String? = null
     ): Boolean {
+        require((teamId != null) != (enterpriseId != null)) { "Either teamId or enterpriseId must be provided, but not both" }
         return try {
             val body = com.google.gson.JsonObject().apply {
                 addProperty("app_id", appId)
                 if (teamId != null) {
                     addProperty("team_id", teamId)
-                }
-                if (enterpriseId != null) {
+                } else {
                     addProperty("enterprise_id", enterpriseId)
                 }
             }
@@ -590,6 +602,25 @@ object SlackManager {
 
                 reconnectDelay = (reconnectDelay * 2).coerceAtMost(MAX_RECONNECT_DELAY_MS)
             }
+        }
+    }
+
+    suspend fun getWorkspaces(): List<String>? {
+        return try {
+            val response = SharedData.httpClient.get("$SLACK_API/auth.teams.list") {
+                bearerAuth(Config.SLACK_BOT_TOKEN)
+                parameter("limit", 1000)
+            }
+            val text = response.bodyAsText()
+
+            val json = SharedData.json.parseToJsonElement(text).jsonObject
+
+            val teams = json["teams"]?.jsonArray?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.content }
+
+            teams ?: throw IllegalStateException("Failed to parse Slack workspaces of $text")
+        } catch (e: Exception) {
+            logger.error("Failed to request Slack workspaces", e)
+            null
         }
     }
 
