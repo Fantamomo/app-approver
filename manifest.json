@@ -7,12 +7,19 @@
       "home_tab_enabled": true,
       "messages_tab_enabled": true,
       "messages_tab_read_only_enabled": true,
-      "agent_tasks_enabled": false
+      "agent_tasks_enabled": true
     },
     "bot_user": {
       "display_name": "App Approver",
       "always_online": true
-    }
+    },
+    "slash_commands": [
+      {
+        "command": "/app-approver",
+        "description": "Main Command for the App Approver System",
+        "should_escape": true
+      }
+    ]
   },
   "oauth_config": {
     "scopes": {
@@ -23,7 +30,8 @@
       "bot": [
         "chat:write",
         "im:read",
-        "im:write"
+        "im:write",
+        "commands"
       ]
     },
     "pkce_enabled": false
