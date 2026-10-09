@@ -626,12 +626,14 @@ object SlackWorkflowService {
 
     suspend fun handleAppHomeOpened(userId: String) {
         val now = Clock.System.now()
-        val lastCheck = appHomeCheckCooldown[userId]
-        if (lastCheck == null || (now - lastCheck) >= 30.seconds) {
-            appHomeCheckCooldown[userId] = now
-            val isVerified = VerificationManager.isVerified(userId, ignoreCache = true)
-            if (isVerified) {
-                VerificationManager.handleUserBecameVerified(userId)
+        if (!VerificationManager.isVerifiedCached(userId)) {
+            val lastCheck = appHomeCheckCooldown[userId]
+            if (lastCheck == null || (now - lastCheck) >= 30.seconds) {
+                appHomeCheckCooldown[userId] = now
+                val isVerified = VerificationManager.isVerified(userId, ignoreCache = true)
+                if (isVerified) {
+                    VerificationManager.handleUserBecameVerified(userId)
+                }
             }
         }
         publishAppHome(userId)

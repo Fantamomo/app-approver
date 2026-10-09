@@ -190,6 +190,18 @@ object VerificationManager {
         }
     }
 
+    fun isVerifiedCached(userId: String): Boolean {
+        val cached = cache[userId]
+        if (cached != null) {
+            if (Clock.System.now() < cached.second) {
+                return cached.first.verified
+            } else {
+                cache.remove(userId)
+            }
+        }
+        return false
+    }
+
     suspend fun isVerified(userId: String, ignoreCache: Boolean = false): Boolean {
         val cached = cache[userId]
         if (!ignoreCache && cached != null) {
