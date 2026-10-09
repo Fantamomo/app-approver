@@ -122,7 +122,11 @@ object InstallRequestRepository {
         }
     }
 
-    suspend fun findPreviousRequests(appId: String, userId: String, excludeRequestId: String? = null): List<PreviousRequestRecord> {
+    suspend fun findPreviousRequests(
+        appId: String,
+        userId: String,
+        excludeRequestId: String? = null
+    ): List<PreviousRequestRecord> {
         return try {
             DatabaseManager.transaction {
                 val query = InstallRequestTable.select(
@@ -221,7 +225,7 @@ object InstallRequestRepository {
         return try {
             DatabaseManager.transaction {
                 val query = InstallRequestTable.selectAll()
-                    .where { (InstallRequestTable.status eq RequestStatus.PENDING_REVIEW) or ((InstallRequestTable.status eq RequestStatus.DENIED) and (InstallRequestTable.resolution.isNull())) }
+                    .where { InstallRequestTable.status eq RequestStatus.PENDING_REVIEW }
                     .orderBy(InstallRequestTable.requestedAt, SortOrder.DESC)
                     .limit(limit)
 
@@ -247,6 +251,40 @@ object InstallRequestRepository {
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             logger.error("Error occurred while finding pending requests", e)
+            throw e
+        }
+    }
+
+    suspend fun getAutoDeniedRequests(limit: Int = 10): List<InstallRequestRecord> {
+        return try {
+            DatabaseManager.transaction {
+                val query = InstallRequestTable.selectAll()
+                    .where { (InstallRequestTable.status eq RequestStatus.DENIED) and (InstallRequestTable.resolution.isNull()) }
+                    .orderBy(InstallRequestTable.requestedAt, SortOrder.DESC)
+                    .limit(limit)
+
+                val rows = query.toList()
+                rows.map { row ->
+                    val reqId = row[InstallRequestTable.requestId]
+                    val scopes = InstallRequestScopeTable.select(
+                        InstallRequestScopeTable.scope,
+                        InstallRequestScopeTable.tokenType
+                    )
+                        .where { InstallRequestScopeTable.requestId eq reqId }
+                        .map {
+                            ScopeIdentity(
+                                name = it[InstallRequestScopeTable.scope],
+                                tokenType = it[InstallRequestScopeTable.tokenType]
+                            )
+                        }
+                        .toList()
+
+                    mapRowToRecord(row, scopes)
+                }
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logger.error("Error occurred while finding auto denied requests", e)
             throw e
         }
     }
