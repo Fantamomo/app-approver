@@ -59,6 +59,8 @@ object InstallRequestTable : Table("install_request") {
 
     val reviewMessageTs = varchar("review_message_ts", 30).nullable()
 
+    val stateId = varchar("state_id", 20).nullable()
+
     val createdAt = timestamp("created_at")
     val updatedAt = timestamp("updated_at")
 

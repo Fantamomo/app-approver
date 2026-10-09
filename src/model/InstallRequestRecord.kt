@@ -24,5 +24,9 @@ data class InstallRequestRecord(
     val resolutionMessage: String?,
     val resolution: RequestDecision?,
     val reviewMessageTs: String?,
-    val scopes: List<ScopeIdentity>
+    val scopes: List<ScopeIdentity>,
+
+    // used in the "value" of buttons in the home view and review threads, to only allow the newest state to be clicked
+    // (to prevent buttons clicked on an older state)
+    val stateId: String?,
 )

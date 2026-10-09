@@ -2,6 +2,7 @@ package com.fantamomo.slack.approver.manager
 
 import com.fantamomo.slack.approver.db.*
 import com.fantamomo.slack.approver.model.*
+import com.fantamomo.slack.approver.utils.randomString
 import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.singleOrNull
@@ -385,7 +386,8 @@ object InstallRequestRepository {
                 resolutionMessage = row[InstallRequestTable.resolutionMessage],
                 resolution = row[InstallRequestTable.resolution],
                 reviewMessageTs = row[InstallRequestTable.reviewMessageTs],
-                scopes = scopes
+                scopes = scopes,
+                stateId = row[InstallRequestTable.stateId]
             )
         } catch (e: Exception) {
             logger.error("Error mapping row to InstallRequestRecord", e)
@@ -397,7 +399,8 @@ object InstallRequestRepository {
         request: AppRequested,
         isUserVerified: Boolean,
         decision: DecisionResult,
-        reviewMessageTs: String? = null
+        reviewMessageTs: String? = null,
+        stateId: String
     ) {
         val now = Clock.System.now()
         val devType = AppDevelopmentType.entries.find { it.value.equals(request.app.developerType, ignoreCase = true) }
@@ -423,6 +426,7 @@ object InstallRequestRepository {
                     it[automaticDecisionReason] = decision.reason
                     it[status] = decision.status
                     it[this.reviewMessageTs] = reviewMessageTs
+                    it[this.stateId] = stateId
                     it[createdAt] = now
                     it[updatedAt] = now
                 }
@@ -458,6 +462,7 @@ object InstallRequestRepository {
                     it[InstallRequestHistoryTable.action] = "AUTOMATIC_DECISION"
                     it[InstallRequestHistoryTable.reason] = decision.reason.name
                     it[InstallRequestHistoryTable.message] = decision.explanation
+                    it[InstallRequestHistoryTable.stateId] = stateId
                     it[InstallRequestHistoryTable.createdAt] = now
                 }
             }
@@ -492,8 +497,9 @@ object InstallRequestRepository {
         actorType: String = "ADMIN",
         action: String = resolution.name,
         reason: RequestDecisionReason = RequestDecisionReason.MANUAL_OVERRIDE
-    ) {
+    ): String {
         val now = Clock.System.now()
+        val newState = randomString(20)
         try {
             DatabaseManager.transaction {
                 InstallRequestTable.update({ InstallRequestTable.requestId eq requestId }) {
@@ -503,6 +509,7 @@ object InstallRequestRepository {
                     it[resolvedAt] = now
                     it[this.resolutionMessage] = resolutionMessage
                     it[updatedAt] = now
+                    it[stateId] = newState
                 }
 
                 InstallRequestHistoryTable.insert {
@@ -514,6 +521,7 @@ object InstallRequestRepository {
                     it[InstallRequestHistoryTable.reason] = reason.name
                     it[InstallRequestHistoryTable.message] = resolutionMessage
                     it[InstallRequestHistoryTable.createdAt] = now
+                    it[InstallRequestHistoryTable.stateId] = newState
                 }
             }
         } catch (e: Exception) {
@@ -521,6 +529,7 @@ object InstallRequestRepository {
             logger.error("Error updating resolution for request $requestId", e)
             throw e
         }
+        return newState
     }
 
     suspend fun updateStatus(
@@ -531,13 +540,15 @@ object InstallRequestRepository {
         action: String,
         reason: RequestDecisionReason?,
         message: String?
-    ) {
+    ): String {
         val now = Clock.System.now()
+        val newStateId = randomString(20)
         try {
             DatabaseManager.transaction {
                 InstallRequestTable.update({ InstallRequestTable.requestId eq requestId }) {
                     it[status] = newStatus
                     it[updatedAt] = now
+                    it[stateId] = newStateId
                 }
 
                 InstallRequestHistoryTable.insert {
@@ -549,6 +560,7 @@ object InstallRequestRepository {
                     it[InstallRequestHistoryTable.reason] = reason?.name
                     it[InstallRequestHistoryTable.message] = message
                     it[InstallRequestHistoryTable.createdAt] = now
+                    it[InstallRequestHistoryTable.stateId] = newStateId
                 }
             }
         } catch (e: Exception) {
@@ -556,6 +568,7 @@ object InstallRequestRepository {
             logger.error("Error updating status for request $requestId", e)
             throw e
         }
+        return newStateId
     }
 
     suspend fun getRestrictedScopes(): List<RestrictedScope> {

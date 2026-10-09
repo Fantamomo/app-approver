@@ -8,6 +8,7 @@ import com.fantamomo.slack.approver.decision.DecisionEngine
 import com.fantamomo.slack.approver.model.AppRequested
 import com.fantamomo.slack.approver.model.RequestStatus
 import com.fantamomo.slack.approver.slack.SlackWorkflowService
+import com.fantamomo.slack.approver.utils.randomString
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -140,8 +141,10 @@ object AppManager {
             )
         )
 
-        val reviewTs = SlackWorkflowService.postInitialReviewMessage(request, isVerified, decision)
-        InstallRequestRepository.saveRequest(request, isVerified, decision, reviewTs)
+        val stateId = randomString(20)
+
+        val reviewTs = SlackWorkflowService.postInitialReviewMessage(request, isVerified, decision, stateId)
+        InstallRequestRepository.saveRequest(request, isVerified, decision, reviewTs, stateId)
 
         if (decision.status == RequestStatus.APPROVED) {
             SlackManager.approveApp(request.app.id, request.team?.id, request.enterprise?.id, request.id)

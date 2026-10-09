@@ -69,12 +69,14 @@ object SlackWorkflowService {
     suspend fun postInitialReviewMessage(
         request: AppRequested,
         isUserVerified: Boolean,
-        decision: DecisionResult
+        decision: DecisionResult,
+        stateId: String
     ): String? {
         val appUrl = request.app.appHomepageUrl.ifBlank { request.app.appDirectoryUrl }
         val appLink = if (appUrl.isNotBlank()) "<$appUrl|${request.app.name}>" else request.app.name
         val statusText = "${statusEmoji(decision.status)} *${statusLabel(decision.status, null)}*"
         val reasonText = formatReason(decision.reason, null, null)
+        val buttonValue = "${request.id}:$stateId"
 
         val messageTs = SlackManager.sendMessage(Config.SLACK_CHANNEL_REVIEW) {
             header {
@@ -88,20 +90,20 @@ object SlackWorkflowService {
                     button {
                         text("Undo", true)
                         actionId("review_undo")
-                        value(request.id)
+                        value(buttonValue)
                         style("primary")
                     }
                     button {
                         text("Restrict", true)
                         actionId("review_restrict")
-                        value(request.id)
+                        value(buttonValue)
                         style("danger")
                     }
                 } else if (decision.status == RequestStatus.DENIED) {
                     button {
                         text("Override (Approve)", true)
                         actionId("review_approve")
-                        value(request.id)
+                        value(buttonValue)
                         style("primary")
                     }
 //                    button {
@@ -113,26 +115,26 @@ object SlackWorkflowService {
                     button {
                         text("Restrict", true)
                         actionId("review_restrict")
-                        value(request.id)
+                        value(buttonValue)
                         style("danger")
                     }
                 } else {
                     button {
                         text("Approve", true)
                         actionId("review_approve")
-                        value(request.id)
+                        value(buttonValue)
                         style("primary")
                     }
                     button {
                         text("Deny", true)
                         actionId("review_deny")
-                        value(request.id)
+                        value(buttonValue)
                         style("danger")
                     }
                     button {
                         text("Restrict", true)
                         actionId("review_restrict")
-                        value(request.id)
+                        value(buttonValue)
                         style("danger")
                     }
                 }
@@ -208,7 +210,12 @@ object SlackWorkflowService {
                 markdownText("*App:* $appLink (`${record.appId}`)\n*User:* <@${record.userId}>\n*Status:* $statusText\n*Reason:* $reasonText")
             }
             actions {
-                reviewButtons(record.requestId, status, resolution, reason)
+                reviewButtons(
+                    record.stateId?.let { "${record.requestId}:$it" } ?: record.requestId,
+                    status,
+                    resolution,
+                    reason
+                )
             }
         }
     }
@@ -517,14 +524,30 @@ object SlackWorkflowService {
         SlackManager.sendTextMessage(Config.SLACK_CHANNEL_LOG, eventText)
     }
 
-    suspend fun sendUnauthorizedMessage(channel: String, threadId: String?, userId: String) {
+    suspend fun openUnauthorizedMessage(triggerId: String) {
+        val view = buildInfoModal(
+            "Unauthorized",
+            ":no_entry_sign: Sorry, you are not authorized to perform this action."
+        )
+        SlackManager.openView(triggerId, view)
+    }
+
+    suspend fun openStateMismatchMessage(triggerId: String) {
+        val view = buildInfoModal(
+            "State Mismatch",
+            ":no_entry_sign: Sorry, there's a conflict\n\nThe request may have been updated by another user. Please refresh and try again.\n(If the error persists, please contact the administrator)"
+        )
+        SlackManager.openView(triggerId, view)
+    }
+
+    suspend fun sendStateMismatch(channel: String, threadId: String?, userId: String) {
         SlackManager.sendEphemeral(
             channel = channel,
             threadTs = threadId,
             userId = userId,
         ) {
             section {
-                markdownText(":no_entry_sign: Sorry, you are not authorized to perform this action.")
+                markdownText(":no_entry_sign: Sorry, state mismatch. Please try again. If this error persists, please contact the administrator.")
             }
         }
     }
@@ -754,6 +777,38 @@ object SlackWorkflowService {
         }
     }
 
+    fun buildInfoModal(title: String, message: String): JsonObject {
+        val view = JsonObject()
+        view.addProperty("type", "modal")
+
+        val titleObj = JsonObject()
+        titleObj.addProperty("type", "plain_text")
+        titleObj.addProperty("text", title.take(24))
+        titleObj.addProperty("emoji", true)
+        view.add("title", titleObj)
+
+        val closeObj = JsonObject()
+        closeObj.addProperty("type", "plain_text")
+        closeObj.addProperty("text", "OK")
+        closeObj.addProperty("emoji", true)
+        view.add("close", closeObj)
+
+        val blocks = JsonArray()
+
+        val section = JsonObject()
+        section.addProperty("type", "section")
+
+        val text = JsonObject()
+        text.addProperty("type", "mrkdwn")
+        text.addProperty("text", message)
+        section.add("text", text)
+        blocks.add(section)
+
+        view.add("blocks", blocks)
+
+        return view
+    }
+
     fun buildReasonModal(
         title: String,
         callbackId: String,
@@ -804,7 +859,7 @@ object SlackWorkflowService {
         placeholderObj.addProperty("type", "plain_text")
         placeholderObj.addProperty(
             "text",
-            "Provide an explanation for this decision... (by the way, something has gone wrong, isn't this funny)"
+            "Provide an explanation for this decision..."
         )
         elementObj.add("placeholder", placeholderObj)
 
@@ -822,7 +877,7 @@ object SlackWorkflowService {
     }
 
     private fun ActionsBlockBuilder.reviewButtons(
-        requestId: String,
+        buttonValue: String,
         status: RequestStatus,
         resolution: RequestDecision?,
         reason: RequestDecisionReason?
@@ -832,13 +887,13 @@ object SlackWorkflowService {
                 button {
                     text("Override (Approve)", true)
                     actionId("review_approve")
-                    value(requestId)
+                    value(buttonValue)
                     style("primary")
                 }
                 button {
                     text("Restrict", true)
                     actionId("review_restrict")
-                    value(requestId)
+                    value(buttonValue)
                     style("danger")
                 }
             }
@@ -847,7 +902,7 @@ object SlackWorkflowService {
                 button {
                     text("Restrict", true)
                     actionId("review_restrict")
-                    value(requestId)
+                    value(buttonValue)
                     style("danger")
                 }
             }
@@ -856,7 +911,7 @@ object SlackWorkflowService {
                 button {
                     text("Undo", true)
                     actionId("review_undo")
-                    value(requestId)
+                    value(buttonValue)
                     style("primary")
                 }
             }
@@ -865,7 +920,7 @@ object SlackWorkflowService {
                 button {
                     text("Restrict", true)
                     actionId("review_restrict")
-                    value(requestId)
+                    value(buttonValue)
                     style("danger")
                 }
             }
@@ -876,13 +931,13 @@ object SlackWorkflowService {
                 button {
                     text("Undo", true)
                     actionId("review_undo")
-                    value(requestId)
+                    value(buttonValue)
                     style("primary")
                 }
                 button {
                     text("Restrict", true)
                     actionId("review_restrict")
-                    value(requestId)
+                    value(buttonValue)
                     style("danger")
                 }
             }
@@ -891,19 +946,19 @@ object SlackWorkflowService {
                 button {
                     text("Approve", true)
                     actionId("review_approve")
-                    value(requestId)
+                    value(buttonValue)
                     style("primary")
                 }
                 button {
                     text("Deny", true)
                     actionId("review_deny")
-                    value(requestId)
+                    value(buttonValue)
                     style("danger")
                 }
                 button {
                     text("Restrict", true)
                     actionId("review_restrict")
-                    value(requestId)
+                    value(buttonValue)
                     style("danger")
                 }
             }
@@ -932,7 +987,10 @@ object SlackWorkflowService {
         }
         if (showButtons) {
             actions {
-                reviewButtons(req.requestId, req.status, req.resolution, null)
+                reviewButtons(req.stateId?.let { "${req.requestId}:$it" } ?: req.requestId,
+                    req.status,
+                    req.resolution,
+                    null)
             }
         }
         divider()

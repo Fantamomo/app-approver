@@ -58,7 +58,7 @@ object SlackInteractionHandler {
             ?: throw IllegalArgumentException("user_id is missing")
         if (userId !in adminUsers) {
             logger.warn("Unauthorized user attempted to use slash command: $userId")
-            sendUnauthorizedError(responseUrl)
+            openUnauthorizedError(responseUrl)
             return
         }
         val text = jsonObject["text"]?.jsonPrimitive?.contentOrNull ?: throw IllegalArgumentException("text is missing")
@@ -72,19 +72,25 @@ object SlackInteractionHandler {
     private suspend fun handleBlockActions(json: JsonObject) {
         val userObj = json["user"]?.jsonObject
         val userId = userObj?.get("id")?.jsonPrimitive?.content ?: return
-        val triggerId = json["trigger_id"]?.jsonPrimitive?.content
+        val triggerId = json["trigger_id"]?.jsonPrimitive?.content ?: run {
+            logger.error("trigger_id is missing in $json")
+            return
+        }
         val actions = json["actions"]?.jsonArray ?: return
 
         for (actionElement in actions) {
             val action = actionElement.jsonObject
             val actionId = action["action_id"]?.jsonPrimitive?.content ?: continue
             val value = action["value"]?.jsonPrimitive?.content ?: ""
+            val parts = value.split(":")
+            val requestId = parts[0]
+            val stateId = parts.getOrNull(1)
 
             when (actionId) {
-                "review_approve" -> handleReviewApprove(userId, value)
-                "review_deny" -> handleReviewDeny(userId, value, triggerId)
-                "review_restrict" -> handleReviewRestrict(userId, value, triggerId)
-                "review_undo" -> handleReviewUndo(userId, value)
+                "review_approve" -> handleReviewApprove(userId, requestId, stateId, triggerId)
+                "review_deny" -> handleReviewDeny(userId, value, stateId, triggerId)
+                "review_restrict" -> handleReviewRestrict(userId, value, stateId, triggerId)
+                "review_undo" -> handleReviewUndo(userId, value, stateId, triggerId)
                 "user_check_verification" -> handleUserCheckVerification(userId, value)
                 "user_request_review" -> handleUserRequestReview(userId, value)
                 "user_withdraw_request" -> handleUserWithdrawRequest(userId, value)
@@ -99,15 +105,20 @@ object SlackInteractionHandler {
         }
     }
 
-    private suspend fun handleReviewApprove(userId: String, requestId: String) {
+    private suspend fun handleReviewApprove(userId: String, requestId: String, stateId: String?, triggerId: String) {
         if (!InstallRequestRepository.isTeamMemberAuthorized(userId)) {
             logger.warn("User $userId is not authorized to approve request $requestId")
-            sendUnauthorizedError(userId, requestId)
+            openUnauthorizedError(triggerId)
             return
         }
 
         val record = InstallRequestRepository.getRequest(requestId) ?: return
-        InstallRequestRepository.updateResolution(
+        if (stateId != record.stateId) {
+            logger.warn("State ID mismatch for request $requestId of $userId ($stateId != ${record.stateId})")
+            openStateMismatchError(triggerId)
+            return
+        }
+        val stateId = InstallRequestRepository.updateResolution(
             requestId = requestId,
             newStatus = RequestStatus.APPROVED,
             resolution = RequestDecision.APPROVED,
@@ -118,10 +129,15 @@ object SlackInteractionHandler {
             reason = RequestDecisionReason.MANUAL_OVERRIDE
         )
 
-        SlackManager.approveApp(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
+        SlackManager.approveApp(
+            record.appId,
+            record.teamId,
+            record.enterpriseId.takeIf { record.teamId == null },
+            record.requestId
+        )
 
         SlackWorkflowService.updateReviewMessage(
-            record = record,
+            record = record.copy(stateId = stateId),
             status = RequestStatus.APPROVED,
             resolution = RequestDecision.APPROVED,
             reason = RequestDecisionReason.MANUAL_OVERRIDE,
@@ -150,43 +166,47 @@ object SlackInteractionHandler {
         )
     }
 
-    private suspend fun handleReviewDeny(userId: String, requestId: String, triggerId: String?) {
+    private suspend fun handleReviewDeny(userId: String, requestId: String, stateId: String?, triggerId: String) {
         if (!InstallRequestRepository.isTeamMemberAuthorized(userId)) {
             logger.warn("User $userId is not authorized to deny request $requestId")
-            sendUnauthorizedError(userId, requestId)
+            openUnauthorizedError(triggerId)
             return
         }
 
-        if (triggerId != null) {
-            val modal = SlackWorkflowService.buildReasonModal("Deny Request", "modal_deny_submit", requestId, "Deny")
-            val opened = SlackManager.openView(triggerId, modal)
-            if (opened) return
-        }
+        val modal = SlackWorkflowService.buildReasonModal(
+            "Deny Request",
+            "modal_deny_submit",
+            stateId?.let { "$requestId:$it" } ?: requestId,
+            "Deny")
+        val opened = SlackManager.openView(triggerId, modal)
+        if (opened) return
 
-        executeDeny(userId, requestId, null)
+        executeDeny(userId, requestId, stateId, null, triggerId)
     }
 
-    private suspend fun handleReviewRestrict(userId: String, requestId: String, triggerId: String?) {
+    private suspend fun handleReviewRestrict(userId: String, requestId: String, stateId: String?, triggerId: String) {
         if (!InstallRequestRepository.isTeamMemberAuthorized(userId)) {
             logger.warn("User $userId is not authorized to restrict request $requestId")
-            sendUnauthorizedError(userId, requestId)
+            openUnauthorizedError(triggerId)
             return
         }
 
-        if (triggerId != null) {
-            val modal =
-                SlackWorkflowService.buildReasonModal("Restrict App", "modal_restrict_submit", requestId, "Restrict")
-            val opened = SlackManager.openView(triggerId, modal)
-            if (opened) return
-        }
+        val modal = SlackWorkflowService.buildReasonModal(
+            "Restrict App",
+            "modal_restrict_submit",
+            stateId?.let { "$requestId:$it" } ?: requestId,
+            "Restrict"
+        )
+        val opened = SlackManager.openView(triggerId, modal)
+        if (opened) return
 
-        executeRestrict(userId, requestId, null)
+        executeRestrict(userId, requestId, stateId, null, triggerId)
     }
 
-    private suspend fun handleReviewUndo(userId: String, requestId: String) {
+    private suspend fun handleReviewUndo(userId: String, requestId: String, stateId: String?, triggerId: String) {
         if (!InstallRequestRepository.isTeamMemberAuthorized(userId)) {
             logger.warn("User $userId is not authorized to undo resolution for request $requestId")
-            sendUnauthorizedError(userId, requestId)
+            openUnauthorizedError(triggerId)
             return
         }
 
@@ -196,12 +216,18 @@ object SlackInteractionHandler {
             return
         }
 
+        if (record.stateId != stateId) {
+            logger.warn("State ID mismatch for request $requestId: expected $stateId, got ${record.stateId}")
+            openStateMismatchError(triggerId)
+            return
+        }
+
         SlackManager.clearResolution(record.appId, record.teamId, record.enterpriseId)
         if (InstallRequestRepository.isAppRestricted(record.appId)) {
             InstallRequestRepository.unrestrictApp(record.appId)
         }
 
-        InstallRequestRepository.updateResolution(
+        val stateId = InstallRequestRepository.updateResolution(
             requestId = requestId,
             newStatus = RequestStatus.DENIED,
             resolution = RequestDecision.UNDONE,
@@ -213,7 +239,7 @@ object SlackInteractionHandler {
         )
 
         SlackWorkflowService.updateReviewMessage(
-            record = record,
+            record = record.copy(stateId = stateId),
             status = RequestStatus.DENIED,
             resolution = RequestDecision.UNDONE,
             reason = RequestDecisionReason.RESOLUTION_UNDONE,
@@ -244,25 +270,54 @@ object SlackInteractionHandler {
     }
 
     private suspend fun handleViewSubmission(json: JsonObject) {
+        logger.info("Handling view submission: $json")
         val userObj = json["user"]?.jsonObject
         val userId = userObj?.get("id")?.jsonPrimitive?.content ?: return
+        val triggerId = json["trigger_id"]?.jsonPrimitive?.contentOrNull
+        if (triggerId == null) {
+            logger.warn("Missing trigger_id in view submission: $json")
+        }
         val view = json["view"]?.jsonObject ?: return
         val callbackId = view["callback_id"]?.jsonPrimitive?.content ?: return
-        val requestId = view["private_metadata"]?.jsonPrimitive?.content ?: return
+        val privateMetadata = view["private_metadata"]?.jsonPrimitive?.content ?: return
+        val parts = privateMetadata.split(":")
+        val requestId = parts[0]
+        val stateId = parts.getOrNull(1)
 
         val values = view["state"]?.jsonObject?.get("values")?.jsonObject
         val reasonInput = values?.get("reason_block")?.jsonObject?.get("reason_input")?.jsonObject
         val reason = reasonInput?.get("value")?.jsonPrimitive?.contentOrNull
 
         when (callbackId) {
-            "modal_deny_submit" -> executeDeny(userId, requestId, reason)
-            "modal_restrict_submit" -> executeRestrict(userId, requestId, reason)
+            "modal_deny_submit" -> executeDeny(userId, requestId, stateId, reason, triggerId)
+            "modal_restrict_submit" -> executeRestrict(userId, requestId, stateId, reason, triggerId)
         }
     }
 
-    private suspend fun executeDeny(userId: String, requestId: String, reason: String?) {
+    private suspend fun executeDeny(userId: String, requestId: String, stateId: String?, reason: String?, triggerId: String?) {
+        if (!InstallRequestRepository.isTeamMemberAuthorized(userId)) {
+            logger.warn("User $userId is not authorized to deny request $requestId")
+            if (triggerId != null) {
+                openUnauthorizedError(triggerId)
+            } else {
+                logger.warn("Failed to open unauthorized error message because trigger_id is missing")
+            }
+            return
+        }
+
         val record = InstallRequestRepository.getRequest(requestId) ?: return
-        InstallRequestRepository.updateResolution(
+
+        if (stateId != record.stateId) {
+            logger.warn("State mismatch: $stateId != ${record.stateId}")
+            if (triggerId != null) {
+                SlackWorkflowService.openStateMismatchMessage(triggerId)
+            } else {
+                logger.warn("Failed to open state mismatch message because trigger_id is missing")
+            }
+            return
+        }
+
+        val newStateId = InstallRequestRepository.updateResolution(
             requestId = requestId,
             newStatus = RequestStatus.DENIED,
             resolution = RequestDecision.DENIED,
@@ -273,10 +328,15 @@ object SlackInteractionHandler {
             reason = RequestDecisionReason.MANUAL_OVERRIDE
         )
 
-        SlackManager.cancelAppRequest(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
+        SlackManager.cancelAppRequest(
+            record.appId,
+            record.teamId,
+            record.enterpriseId.takeIf { record.teamId == null },
+            record.requestId
+        )
 
         SlackWorkflowService.updateReviewMessage(
-            record = record,
+            record = record.copy(stateId = newStateId),
             status = RequestStatus.DENIED,
             resolution = RequestDecision.DENIED,
             reason = RequestDecisionReason.MANUAL_OVERRIDE,
@@ -306,8 +366,28 @@ object SlackInteractionHandler {
         )
     }
 
-    private suspend fun executeRestrict(userId: String, requestId: String, reason: String?) {
+    private suspend fun executeRestrict(userId: String, requestId: String, stateId: String?, reason: String?, triggerId: String?) {
+        if (!InstallRequestRepository.isTeamMemberAuthorized(userId)) {
+            logger.warn("User $userId is not authorized to restrict request $requestId")
+            if (triggerId != null) {
+                openUnauthorizedError(triggerId)
+            } else {
+                logger.warn("Failed to open unauthorized error message because trigger_id is missing")
+            }
+            return
+        }
+
         val record = InstallRequestRepository.getRequest(requestId) ?: return
+
+        if (stateId != record.stateId) {
+            logger.warn("State mismatch: $stateId != ${record.stateId}")
+            if (triggerId != null) {
+                SlackWorkflowService.openStateMismatchMessage(triggerId)
+            } else {
+                logger.warn("Failed to open state mismatch message because trigger_id is missing")
+            }
+            return
+        }
 
         InstallRequestRepository.restrictApp(
             appId = record.appId,
@@ -316,7 +396,7 @@ object SlackInteractionHandler {
             reason = reason
         )
 
-        InstallRequestRepository.updateResolution(
+        val stateId = InstallRequestRepository.updateResolution(
             requestId = requestId,
             newStatus = RequestStatus.DENIED,
             resolution = RequestDecision.RESTRICTED,
@@ -327,10 +407,15 @@ object SlackInteractionHandler {
             reason = RequestDecisionReason.RESTRICTED_APPLICATION
         )
 
-        SlackManager.restrictApp(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
+        SlackManager.restrictApp(
+            record.appId,
+            record.teamId,
+            record.enterpriseId.takeIf { record.teamId == null },
+            record.requestId
+        )
 
         SlackWorkflowService.updateReviewMessage(
-            record = record,
+            record = record.copy(stateId = stateId),
             status = RequestStatus.DENIED,
             resolution = RequestDecision.RESTRICTED,
             reason = RequestDecisionReason.RESTRICTED_APPLICATION,
@@ -400,7 +485,7 @@ object SlackInteractionHandler {
             }
         }
 
-        InstallRequestRepository.updateStatus(
+        val stateId = InstallRequestRepository.updateStatus(
             requestId = requestId,
             newStatus = RequestStatus.PENDING_REVIEW,
             actorId = userId,
@@ -411,7 +496,7 @@ object SlackInteractionHandler {
         )
 
         SlackWorkflowService.updateReviewMessage(
-            record = record,
+            record = record.copy(stateId = stateId),
             status = RequestStatus.PENDING_REVIEW,
             resolution = null,
             reason = RequestDecisionReason.USER_REQUESTED_REVIEW,
@@ -453,7 +538,7 @@ object SlackInteractionHandler {
             }
         }
 
-        InstallRequestRepository.updateStatus(
+        val stateId = InstallRequestRepository.updateStatus(
             requestId = requestId,
             newStatus = RequestStatus.WITHDRAWN,
             actorId = userId,
@@ -464,7 +549,7 @@ object SlackInteractionHandler {
         )
 
         SlackWorkflowService.updateReviewMessage(
-            record = record,
+            record = record.copy(stateId = stateId),
             status = RequestStatus.WITHDRAWN,
             resolution = RequestDecision.WITHDRAWN,
             reason = RequestDecisionReason.USER_WITHDRAWN,
@@ -472,7 +557,12 @@ object SlackInteractionHandler {
             resolutionMessage = null
         )
 
-        SlackManager.cancelAppRequest(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
+        SlackManager.cancelAppRequest(
+            record.appId,
+            record.teamId,
+            record.enterpriseId.takeIf { record.teamId == null },
+            record.requestId
+        )
 
         record.reviewMessageTs?.let { ts ->
             SlackWorkflowService.postReviewThreadUpdate(ts, userId, "withdrew the installation request.")
@@ -493,14 +583,16 @@ object SlackInteractionHandler {
         )
     }
 
-    private suspend fun sendUnauthorizedError(userId: String, requestId: String) {
-        val record = InstallRequestRepository.getRequest(requestId) ?: return
-        SlackWorkflowService.sendUnauthorizedMessage(Config.SLACK_CHANNEL_REVIEW, record.reviewMessageTs, userId)
+    private suspend fun openUnauthorizedError(triggerId: String) {
+        SlackWorkflowService.openUnauthorizedMessage(triggerId)
     }
 
-    private suspend fun sendUnauthorizedError(responseUrl: String) = SlackWorkflowService.sendUnauthorizedMessage(Url(responseUrl))
+    private suspend fun openStateMismatchError(triggerId: String) {
+        SlackWorkflowService.openStateMismatchMessage(triggerId)
+    }
 
-    private suspend fun sendUnauthorizedError(responseUrl: Url) {
+
+    private suspend fun openUnauthorizedError(responseUrl: Url) {
         require(responseUrl.host == "hooks.slack.com") { "Invalid response URL: $responseUrl" }
         SlackWorkflowService.sendUnauthorizedMessage(responseUrl)
     }
