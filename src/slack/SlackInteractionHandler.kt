@@ -20,6 +20,8 @@ object SlackInteractionHandler {
         .map { it.trim() }
         .filter { it.isNotEmpty() && (it[0] == 'W' || it[0] == 'U') }
 
+    fun isAdmin(userId: String): Boolean = userId in adminUsers
+
     suspend fun handlePayload(payloadJsonString: String, type: String? = null) {
         val element = Json.parseToJsonElement(payloadJsonString)
         val jsonObject = element.jsonObject
@@ -86,7 +88,14 @@ object SlackInteractionHandler {
                 "user_check_verification" -> handleUserCheckVerification(userId, value)
                 "user_request_review" -> handleUserRequestReview(userId, value)
                 "user_withdraw_request" -> handleUserWithdrawRequest(userId, value)
+                "home_team" -> SlackWorkflowService.setHomeMode(userId, false, updateHome = false)
+                "home_admin" -> SlackWorkflowService.setHomeMode(userId, true, updateHome = false)
             }
+        }
+
+        // if the action came from the app home, we need to republish the home, because the state may have changed
+        if ((json["view"] as? JsonObject)?.get("type")?.jsonPrimitive?.content == "home") {
+            SlackWorkflowService.publishAppHome(userId)
         }
     }
 
@@ -109,7 +118,7 @@ object SlackInteractionHandler {
             reason = RequestDecisionReason.MANUAL_OVERRIDE
         )
 
-        SlackManager.approveApp(record.appId, record.teamId, record.requestId)
+        SlackManager.approveApp(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
 
         SlackWorkflowService.updateReviewMessage(
             record = record,
@@ -264,7 +273,7 @@ object SlackInteractionHandler {
             reason = RequestDecisionReason.MANUAL_OVERRIDE
         )
 
-        SlackManager.cancelAppRequest(record.appId, record.teamId, record.requestId)
+        SlackManager.cancelAppRequest(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
 
         SlackWorkflowService.updateReviewMessage(
             record = record,
@@ -318,7 +327,7 @@ object SlackInteractionHandler {
             reason = RequestDecisionReason.RESTRICTED_APPLICATION
         )
 
-        SlackManager.restrictApp(record.appId, record.teamId, record.requestId)
+        SlackManager.restrictApp(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
 
         SlackWorkflowService.updateReviewMessage(
             record = record,
@@ -434,12 +443,14 @@ object SlackInteractionHandler {
         if (record.userId != userId) return
 
         if (record.status != RequestStatus.PENDING_REVIEW) {
-            SlackWorkflowService.sendNotAbleToWithdrawDm(
-                userId = userId,
-                appName = record.appName,
-                status = record.status,
-            )
-            return
+            if (record.status != RequestStatus.DENIED || record.resolution != null) {
+                SlackWorkflowService.sendNotAbleToWithdrawDm(
+                    userId = userId,
+                    appName = record.appName,
+                    status = record.status,
+                )
+                return
+            }
         }
 
         InstallRequestRepository.updateStatus(
@@ -461,7 +472,7 @@ object SlackInteractionHandler {
             resolutionMessage = null
         )
 
-        SlackManager.cancelAppRequest(record.appId, record.teamId, record.requestId)
+        SlackManager.cancelAppRequest(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
 
         record.reviewMessageTs?.let { ts ->
             SlackWorkflowService.postReviewThreadUpdate(ts, userId, "withdrew the installation request.")
