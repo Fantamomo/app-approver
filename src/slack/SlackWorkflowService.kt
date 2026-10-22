@@ -2,6 +2,7 @@ package com.fantamomo.slack.approver.slack
 
 import com.fantamomo.slack.approver.data.Config
 import com.fantamomo.slack.approver.data.Constants.BULLET
+import com.fantamomo.slack.approver.decision.DecisionContext
 import com.fantamomo.slack.approver.manager.InstallRequestRepository
 import com.fantamomo.slack.approver.manager.SlackManager
 import com.fantamomo.slack.approver.manager.VerificationManager
@@ -62,6 +63,7 @@ object SlackWorkflowService {
             RequestDecisionReason.USER_WITHDRAWN -> "Withdrawn by user"
             RequestDecisionReason.USER_REQUESTED_REVIEW -> "Manual review requested by user"
             RequestDecisionReason.RESOLUTION_UNDONE -> "Resolution undone"
+            RequestDecisionReason.COMMAND_ALREADY_IN_USE -> "Command is already in use by another app"
             null -> "None"
         }
     }
@@ -70,6 +72,7 @@ object SlackWorkflowService {
         request: AppRequested,
         isUserVerified: Boolean,
         decision: DecisionResult,
+        decisionContext: DecisionContext,
         stateId: String
     ): String? {
         val appUrl = request.app.appHomepageUrl.ifBlank { request.app.appDirectoryUrl }
@@ -144,11 +147,33 @@ object SlackWorkflowService {
         val scopesText = if (request.scopes.isEmpty()) {
             "None"
         } else {
-            logger.info("Scopes for ${request.id}: ${request.scopes}")
+            val hasNoFinalResolutions = decisionContext.previousRequests.none { it.status.final }
             request.scopes.joinToString("\n") { s ->
                 val sens = if (s.isSensitive) " (sensitive)" else ""
                 val opt = if (s.isOptional) " (optional)" else ""
-                "$BULLET `${s.name}` [${s.tokenType}]$sens$opt"
+                val previousResolutionText = if (hasNoFinalResolutions) {
+                    ""
+                } else {
+                    val previousResolution = decisionContext.previousRequests.findLast {
+                        it.status.final && it.scopes.any { scope -> scope.name == s.name && scope.tokenType == s.tokenType }
+                    }?.status
+                    when (previousResolution) {
+                        RequestStatus.APPROVED -> " (approved)"
+                        RequestStatus.DENIED -> " (denied)"
+                        else -> " (new)"
+                    }
+                }
+                "$BULLET `${s.name}` [${s.tokenType}]$sens$opt$previousResolutionText"
+            }
+        }
+
+        val commandText = if (decisionContext.commands.isEmpty()) {
+            "None"
+        } else {
+            decisionContext.commands.joinToString("\n") { cmd ->
+                val desc = cmd.description.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""
+                val owner = decision.relevantCommands[cmd.name]?.let { " (Owned by $it)" } ?: ""
+                "$BULLET `${cmd.name}`$desc$owner"
             }
         }
 
@@ -167,6 +192,8 @@ object SlackWorkflowService {
             if (request.app.description.isNotBlank()) append("$BULLET Description: ${request.app.description}\n")
 
             append("\n*Requested Scopes:*\n$scopesText\n")
+
+            append("\n*Slash Commands:*\n$commandText\n")
 
             append("\n*Initial Evaluation:*\n")
             append("$BULLET Status: ${decision.status}\n")
@@ -242,6 +269,7 @@ object SlackWorkflowService {
         status: RequestStatus,
         reason: RequestDecisionReason?,
         relevantScopes: List<String> = emptyList(),
+        relevantCommands: Map<String, String> = emptyMap(),
         customMessage: String? = null,
         resolvedBy: String? = null
     ) {
@@ -400,6 +428,40 @@ object SlackWorkflowService {
                         }
                     }
 
+                    RequestDecisionReason.COMMAND_ALREADY_IN_USE -> {
+                        val commandInfo = if (relevantCommands.isNotEmpty()) {
+                            "\n*Command in use:*\n${relevantCommands.entries.joinToString("\n") { "$BULLET `${it.key}` (${it.value})" }}"
+                        } else ""
+                        val count = when (relevantCommands.size) {
+                            0 -> "at least one"
+                            1 -> "one"
+                            2 -> "two"
+                            else -> relevantCommands.size.toString()
+                        }
+                        val s = if (relevantCommands.size > 1) "s" else ""
+                        val are = if (relevantCommands.size > 1) "are" else "is"
+                        val apps = if (relevantCommands.values.toSet().size > 1) "apps" else "app"
+                        SlackManager.sendDm(userId) {
+                            section {
+                                markdownText(":no_entry_sign: Your installation request for *$appName* was declined because $count command$s $are already in use by another $apps.\n\n$commandInfo\nWithdraw your request to change the command$s (maybe add a prefix) or request a manual review.")
+                            }
+                            actions {
+                                button {
+                                    text("Request Manual Review", true)
+                                    actionId("user_request_review")
+                                    value(requestId)
+                                    style("primary")
+                                }
+                                button {
+                                    text("Withdraw Request", true)
+                                    actionId("user_withdraw_request")
+                                    value(requestId)
+                                    style("danger")
+                                }
+                            }
+                        }
+                    }
+
                     else -> {
                         SlackManager.sendDm(userId) {
                             section {
@@ -509,6 +571,10 @@ object SlackWorkflowService {
 
                     RequestDecisionReason.RESTRICTED_APPLICATION -> {
                         ":lock: $user requested $app, but the request was automatically denied because the application is restricted."
+                    }
+
+                    RequestDecisionReason.COMMAND_ALREADY_IN_USE -> {
+                        ":no_entry_sign: $user requested $app, but the request was automatically denied because one command is already in use by another app."
                     }
 
                     else -> {
