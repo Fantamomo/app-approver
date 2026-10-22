@@ -88,6 +88,7 @@ object DatabaseManager {
             logger.info("First run, just initializing database, ignoring migrations")
             transaction {
                 SchemaUtils.create(
+                    AppCommandsTable,
                     ApproveTeamMemberTable,
                     CachedVerificationStatusTable,
                     InstallRequestPreviousResolutionTable,

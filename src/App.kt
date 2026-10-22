@@ -3,10 +3,7 @@ package com.fantamomo.slack.approver
 import com.fantamomo.slack.approver.app.rootModule
 import com.fantamomo.slack.approver.data.Config
 import com.fantamomo.slack.approver.data.SharedData
-import com.fantamomo.slack.approver.manager.AppManager
-import com.fantamomo.slack.approver.manager.DatabaseManager
-import com.fantamomo.slack.approver.manager.SlackManager
-import com.fantamomo.slack.approver.manager.VerificationManager
+import com.fantamomo.slack.approver.manager.*
 import com.fantamomo.slack.approver.utils.substringBeforeCount
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -57,6 +54,12 @@ object App {
             }
         }
 
+        if (SharedData.validClientTokens) {
+            launch {
+                AppCommandManager.start()
+            }
+        }
+
         launch {
             VerificationManager.start()
         }
@@ -78,6 +81,9 @@ object App {
         require(Config.SLACK_BOT_TOKEN.startsWith("xoxb-")) { "A bot token must start with xoxb-" }
         require(Config.SLACK_USER_TOKEN.startsWith("xoxp-")) { "A user token must start with xoxp-" }
         require(!Config.SOCKET_MODE || Config.SLACK_APP_TOKEN.startsWith("xapp-")) { "When using Socket Mode, a Slack App Token must start with xapp-" }
+        require(Config.SLACK_CLIENT_TOKEN.run { isEmpty() || startsWith("xoxc-") }) { "A client token must start with xoxc-" }
+        require(Config.SLACK_SESSION_COOKIE.run { isEmpty() || startsWith("xoxd-") }) { "A session cookie must start with xoxd-" }
+        require(Config.SLACK_CLIENT_TOKEN.isEmpty() == Config.SLACK_SESSION_COOKIE.isEmpty()) { "A client token and session cookie must be provided together" }
 
         val start = Clock.System.now()
 
@@ -112,21 +118,37 @@ object App {
                 )
             }
         }
+        val slackClientToken = Config.SLACK_CLIENT_TOKEN.ifBlank { null }?.let {
+            async {
+                checkToken(
+                    it,
+                    null,
+                    dCookie = Config.SLACK_SESSION_COOKIE
+                )
+            }
+        }
 
         val botResponse = slackBotToken.await() ?: return@coroutineScope false
         val userResponse = slackUserToken.await() ?: return@coroutineScope false
         val appResponse = slackAppToken?.await()
+        val clientResponse = slackClientToken?.await()
 
         val duration = Clock.System.now() - start
         logger.info("Checked tokens in $duration")
 
         val botEnterpriseId = (botResponse["enterprise_id"] as? JsonPrimitive)?.contentOrNull
         val userEnterpriseId = (userResponse["enterprise_id"] as? JsonPrimitive)?.contentOrNull
+        val clientEnterpriseId = (clientResponse?.get("enterprise_id") as? JsonPrimitive)?.contentOrNull
 
         if (botEnterpriseId != userEnterpriseId) {
             logger.error("User token ($userEnterpriseId) is from a different enterprise than the bot token ($botEnterpriseId)")
             return@coroutineScope false
         }
+        if (botEnterpriseId != clientEnterpriseId && clientResponse != null) {
+            logger.error("Client token ($clientEnterpriseId) is from a different enterprise than the bot token ($botEnterpriseId)")
+            return@coroutineScope false
+        }
+        SharedData.validClientTokens = clientResponse != null
         if (botEnterpriseId == null) {
             // we should never get here because Slack does not allow non-enterprise apps to access our required scopes
             logger.error("App is not installed in an enterprise organisation")
@@ -188,8 +210,9 @@ object App {
         return@coroutineScope true
     }
 
-    private suspend fun checkToken(token: String, requiredScopes: Map<String, String>): JsonObject? {
-        val (jsonObject, response) = checkToken(token) ?: return null
+    private suspend fun checkToken(token: String, requiredScopes: Map<String, String>?, dCookie: String? = null): JsonObject? {
+        val (jsonObject, response) = checkToken(token, dCookie = dCookie) ?: return null
+        if (requiredScopes == null) return jsonObject
         val scopeHeaders = response.headers["x-oauth-scopes"]
         if (scopeHeaders == null) {
             logger.error("No scope headers found for token $token")
@@ -212,21 +235,24 @@ object App {
         return jsonObject
     }
 
-    private suspend fun checkToken(token: String): Pair<JsonObject, HttpResponse>? {
+    private suspend fun checkToken(token: String, dCookie: String?): Pair<JsonObject, HttpResponse>? {
         try {
             val response = SharedData.httpClient.get("https://slack.com/api/auth.test") {
                 bearerAuth(token)
+                if (dCookie != null) {
+                    cookie("d", dCookie)
+                }
             }
             val text = response.bodyAsText()
             val jsonObject = SharedData.json.parseToJsonElement(text).jsonObject
             if ((jsonObject["ok"] as? JsonPrimitive)?.booleanOrNull != true) {
                 val error = (jsonObject["error"] as? JsonPrimitive)?.contentOrNull
-                logger.error("Failed to check token: ${error ?: jsonObject}")
+                logger.error("Failed to check token ${token.substringBeforeCount("-", 1)}: ${error ?: jsonObject}")
                 return null
             }
             return jsonObject to response
         } catch (e: Exception) {
-            logger.error("Failed to check token", e)
+            logger.error("Failed to check token ${token.substringBeforeCount("-", 1)}", e)
             return null
         }
     }

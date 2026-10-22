@@ -22,6 +22,7 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.r2dbc.select
 import org.jetbrains.exposed.v1.r2dbc.upsert
 import org.slf4j.LoggerFactory
+import java.net.ConnectException
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
@@ -105,6 +106,11 @@ object VerificationManager {
             val isAppRestricted = InstallRequestRepository.isAppRestricted(record.appId)
             val previousRequests =
                 InstallRequestRepository.findPreviousRequests(record.appId, record.userId, record.requestId)
+            val appCommands = AppCommandManager.indexCommands(record.appId)
+            val commandsAllReadyInUse =
+                if (appCommands.isEmpty()) emptyMap()
+                else AppCommandManager.returnCommandOwners(appCommands.map { it.name })
+                    .filter { it.value != record.appId }
 
             val decision = DecisionEngine.evaluate(
                 DecisionContext(
@@ -112,7 +118,9 @@ object VerificationManager {
                     isUserVerified = true,
                     restrictedScopes = restrictedScopes,
                     isAppRestricted = isAppRestricted,
-                    previousRequests = previousRequests
+                    previousRequests = previousRequests,
+                    commandsAllReadyInUse = commandsAllReadyInUse,
+                    commands = appCommands,
                 )
             )
 
@@ -128,7 +136,12 @@ object VerificationManager {
                     reason = RequestDecisionReason.USER_VERIFIED
                 )
 
-                SlackManager.approveApp(record.appId, record.teamId, record.enterpriseId.takeIf { record.teamId == null }, record.requestId)
+                SlackManager.approveApp(
+                    record.appId,
+                    record.teamId,
+                    record.enterpriseId.takeIf { record.teamId == null },
+                    record.requestId
+                )
 
                 SlackWorkflowService.updateReviewMessage(
                     record = record.copy(stateId = newStateId),
@@ -152,7 +165,7 @@ object VerificationManager {
                     appName = record.appName,
                     requestId = record.requestId,
                     status = RequestStatus.APPROVED,
-                    reason = RequestDecisionReason.USER_VERIFIED
+                    reason = RequestDecisionReason.USER_VERIFIED,
                 )
 
                 SlackManager.sendTextMessage(
@@ -216,7 +229,11 @@ object VerificationManager {
         return status.verified
     }
 
-    private suspend fun checkVerificationStatus(userId: String, ignoreCache: Boolean = false, users: MutableSet<String> = mutableSetOf()): VerificationStatus {
+    private suspend fun checkVerificationStatus(
+        userId: String,
+        ignoreCache: Boolean = false,
+        users: MutableSet<String> = mutableSetOf()
+    ): VerificationStatus {
         // used to prevent circular dependencies in the alt detection progress
         if (!users.add(userId)) {
             logger.warn("Detected circular dependency for user $userId in ${users.joinToString(", ")}")
@@ -336,6 +353,11 @@ object VerificationManager {
             SharedData.httpClient.get(ALT_CHECK) {
                 parameter("slack_id", userId)
             }
+        } catch (e: ConnectException) {
+            logger.warn("Failed to connect to $ALT_CHECK")
+            return false to ""
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to check alt for user $userId: $e")
             return false to ""

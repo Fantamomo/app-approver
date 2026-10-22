@@ -4,6 +4,7 @@ data class DecisionResult(
     val status: RequestStatus,
     val reason: RequestDecisionReason,
     val relevantRestrictedScopes: List<String> = emptyList(),
+    val relevantCommands: Map<String, String> = emptyMap(),
     val requiresManualReview: Boolean = false,
     val isRepeatedRequest: Boolean = false,
     val explanation: String = ""

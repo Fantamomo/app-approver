@@ -27,6 +27,7 @@ object AppManager {
 
     @Serializable
     private class ResponseMetadata(val next_cursor: String)
+
     @Serializable
     private class Response(val app_requests: List<AppRequested>, val response_metadata: ResponseMetadata?)
 
@@ -126,24 +127,31 @@ object AppManager {
         }
         logger.info("Handling request: {}", request.id)
 
-        val isVerified = VerificationManager.isVerified(request.user.id,)
+        val isVerified = VerificationManager.isVerified(request.user.id)
         val restrictedScopes = InstallRequestRepository.getRestrictedScopes()
         val isAppRestricted = InstallRequestRepository.isAppRestricted(request.app.id)
-        val previousRequests = InstallRequestRepository.findPreviousRequests(request.app.id, request.user.id, request.id)
+        val previousRequests =
+            InstallRequestRepository.findPreviousRequests(request.app.id, request.user.id, request.id)
+        val appCommands = AppCommandManager.indexCommands(request.app.id)
+        val commandsAllReadyInUse =
+            if (appCommands.isEmpty()) emptyMap()
+            else AppCommandManager.returnCommandOwners(appCommands.map { it.name })
+                .filter { it.value != request.app.id }
 
-        val decision = DecisionEngine.evaluate(
-            DecisionContext(
-                request = request,
-                isUserVerified = isVerified,
-                restrictedScopes = restrictedScopes,
-                isAppRestricted = isAppRestricted,
-                previousRequests = previousRequests
-            )
+        val decisionContext = DecisionContext(
+            request = request,
+            isUserVerified = isVerified,
+            restrictedScopes = restrictedScopes,
+            isAppRestricted = isAppRestricted,
+            previousRequests = previousRequests,
+            commandsAllReadyInUse = commandsAllReadyInUse,
+            commands = appCommands,
         )
+        val decision = DecisionEngine.evaluate(decisionContext)
 
         val stateId = randomString(20)
 
-        val reviewTs = SlackWorkflowService.postInitialReviewMessage(request, isVerified, decision, stateId)
+        val reviewTs = SlackWorkflowService.postInitialReviewMessage(request, isVerified, decision, decisionContext, stateId)
         InstallRequestRepository.saveRequest(request, isVerified, decision, reviewTs, stateId)
 
         if (decision.status == RequestStatus.APPROVED) {
@@ -156,7 +164,8 @@ object AppManager {
             requestId = request.id,
             status = decision.status,
             reason = decision.reason,
-            relevantScopes = decision.relevantRestrictedScopes
+            relevantScopes = decision.relevantRestrictedScopes,
+            relevantCommands = decision.relevantCommands,
         )
 
         SlackWorkflowService.logInitialTransparencyEvent(request, decision)
