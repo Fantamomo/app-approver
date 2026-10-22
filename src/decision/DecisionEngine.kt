@@ -5,7 +5,18 @@ import com.fantamomo.slack.approver.model.*
 object DecisionEngine {
 
     fun evaluate(context: DecisionContext): DecisionResult {
-        // 1. if the app is restricted, deny the request
+
+        // 1. if the request was resolved by slack automation, we cannot do anything, so return the resolution status
+        val resolutionStatus = context.request.resolution?.status?.lowercase()?.let { status -> SlackResolution.entries.find { status == it.value } }
+        if (resolutionStatus != null && resolutionStatus != SlackResolution.PENDING) {
+            return DecisionResult(
+                status = if (resolutionStatus == SlackResolution.APPROVED) RequestStatus.APPROVED else RequestStatus.DENIED,
+                reason = RequestDecisionReason.SLACK_AUTOMATION,
+                explanation = "The request was ${resolutionStatus.value} by slack automation."
+            )
+        }
+
+        // 2. if the app is restricted, deny the request
         if (context.isAppRestricted) {
             return DecisionResult(
                 status = RequestStatus.DENIED,
@@ -14,7 +25,7 @@ object DecisionEngine {
             )
         }
 
-        // 2. if the request is for an enterprise installation, deny the request
+        // 3. if the request is for an enterprise installation, deny the request
         if (context.request.enterprise != null) {
             return DecisionResult(
                 status = RequestStatus.DENIED,
@@ -40,7 +51,7 @@ object DecisionEngine {
             prevScopes == currentScopes
         }
 
-        // 3. if the request has been previously denied with the same scopes, deny the request
+        // 4. if the request has been previously denied with the same scopes, deny the request
         if (isRepeatedDenied) {
             return DecisionResult(
                 status = RequestStatus.DENIED,
@@ -61,7 +72,7 @@ object DecisionEngine {
             )
         }
 
-        // 4. check all the scopes
+        // 5. check all the scopes
         val nonReviewableRestrictedScopes = mutableListOf<String>()
         val reviewableRestrictedScopes = mutableListOf<String>()
         val unallowedForUnverifiedScopes = mutableListOf<String>()
@@ -113,7 +124,7 @@ object DecisionEngine {
 
         if (previousApprovedRequests.isNotEmpty()) {
             val newlyRestrictedScopes = allRestrictedScopes.filter { scope -> !previouslyApprovedScopeNames.contains(scope.lowercase()) }
-            // 5. if the request has been previously approved with some restricted scopes, but no new restricted scopes, approve the request
+            // 6. if the request has been previously approved with some restricted scopes, but no new restricted scopes, approve the request
             if (newlyRestrictedScopes.isEmpty()) {
                 if (context.isUserVerified) {
                     return DecisionResult(
@@ -134,7 +145,7 @@ object DecisionEngine {
             }
         }
 
-        // 6. if the request contains at least one non-reviewable restricted scope, deny the request
+        // 7. if the request contains at least one non-reviewable restricted scope, deny the request
         if (nonReviewableRestrictedScopes.isNotEmpty()) {
             return DecisionResult(
                 status = RequestStatus.DENIED,
@@ -146,7 +157,7 @@ object DecisionEngine {
         }
 
         if (context.isUserVerified) {
-            // 7. if the request contains at least one reviewable restricted scope, send to manual review
+            // 8. if the request contains at least one reviewable restricted scope, send to manual review
             if (reviewableRestrictedScopes.isNotEmpty()) {
                 return DecisionResult(
                     status = RequestStatus.PENDING_REVIEW,
@@ -156,7 +167,7 @@ object DecisionEngine {
                     explanation = "The request contains restricted scopes requiring manual review."
                 )
             }
-            // 8. if the request contains no restricted scopes, approve the request
+            // 9. if the request contains no restricted scopes, approve the request
             return DecisionResult(
                 status = RequestStatus.APPROVED,
                 reason = RequestDecisionReason.USER_VERIFIED,
@@ -164,7 +175,7 @@ object DecisionEngine {
             )
         }
 
-        // 9. if we get here and there are still restricted scopes, deny the request
+        // 10. if we get here and there are still restricted scopes, deny the request
         if (allRestrictedScopes.isNotEmpty()) {
             return DecisionResult(
                 status = RequestStatus.DENIED,
@@ -175,7 +186,7 @@ object DecisionEngine {
             )
         }
 
-        // 10. if the user is not verified and there are restricted scopes, deny the request
+        // 11. if the user is not verified and there are restricted scopes, deny the request
         if (unallowedForUnverifiedScopes.isNotEmpty()) {
             return DecisionResult(
                 status = RequestStatus.DENIED,
@@ -186,7 +197,7 @@ object DecisionEngine {
             )
         }
 
-        // 11. if we get here, approve the request
+        // 12. if we get here, approve the request
         return DecisionResult(
             status = RequestStatus.APPROVED,
             reason = RequestDecisionReason.USER_UNVERIFIED_ALLOWED_SCOPES,
