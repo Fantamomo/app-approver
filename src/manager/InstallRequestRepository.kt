@@ -463,7 +463,8 @@ object InstallRequestRepository {
                     it[InstallRequestHistoryTable.requestId] = request.id
                     it[InstallRequestHistoryTable.status] = decision.status.name
                     it[InstallRequestHistoryTable.actorId] = null
-                    it[InstallRequestHistoryTable.actorType] = "BOT"
+                    it[InstallRequestHistoryTable.actorType] =
+                        if (decision.reason == RequestDecisionReason.SLACK_AUTOMATION) "SLACK " else "BOT"
                     it[InstallRequestHistoryTable.action] = "AUTOMATIC_DECISION"
                     it[InstallRequestHistoryTable.reason] = decision.reason.name
                     it[InstallRequestHistoryTable.message] = decision.explanation

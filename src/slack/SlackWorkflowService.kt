@@ -276,14 +276,16 @@ object SlackWorkflowService {
     ) {
         when (status) {
             RequestStatus.APPROVED -> {
-                val by = if (resolvedBy != null) "approved by <@$resolvedBy>" else "automatically approved"
-                SlackManager.sendDm(userId) {
-                    section {
-                        markdownText(":white_check_mark: Your installation request for *$appName* has been $by!\n\nThe app is now approved and ready to be installed.")
-                    }
-                    if (!customMessage.isNullOrBlank()) {
+                if (reason != RequestDecisionReason.SLACK_AUTOMATION) {
+                    val by = if (resolvedBy != null) "approved by <@$resolvedBy>" else "automatically approved"
+                    SlackManager.sendDm(userId) {
                         section {
-                            markdownText("*Note:* $customMessage")
+                            markdownText(":white_check_mark: Your installation request for *$appName* has been $by!\n\nThe app is now approved and ready to be installed.")
+                        }
+                        if (!customMessage.isNullOrBlank()) {
+                            section {
+                                markdownText("*Note:* $customMessage")
+                            }
                         }
                     }
                 }
