@@ -77,6 +77,20 @@ object Config {
         canBeSetByEnv = true
     )
 
+    val SLACK_CLIENT_TOKEN: String by string(
+        key = "slack.client.token",
+        description = "The Slack client token. (Required for command checking)",
+        default = "",
+        canBeSetByEnv = true
+    )
+
+    val SLACK_SESSION_COOKIE: String by string(
+        key = "slack.session.cookie",
+        description = "The Slack session cookie starting with 'xoxd-' (Cookie name is 'd') (Required for command checking)",
+        default = "",
+        canBeSetByEnv = true
+    )
+
     val SLACK_CHANNEL_REVIEW: String by string(
         key = "slack.channel.review",
         description = "The Slack channel for reviews.",
@@ -88,12 +102,6 @@ object Config {
         description = "The Slack channel for review logs.",
         canBeSetByEnv = true
     )
-
-//    val SLACK_TEAM_ID: String by string(
-//        key = "slack.team.id",
-//        description = "The Slack team ID.",
-//        canBeSetByEnv = true
-//    )
 
     val SOCKET_MODE: Boolean by boolean(
         key = "socket.mode",
