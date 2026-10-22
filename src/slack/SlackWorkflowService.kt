@@ -64,6 +64,7 @@ object SlackWorkflowService {
             RequestDecisionReason.USER_REQUESTED_REVIEW -> "Manual review requested by user"
             RequestDecisionReason.RESOLUTION_UNDONE -> "Resolution undone"
             RequestDecisionReason.COMMAND_ALREADY_IN_USE -> "Command is already in use by another app"
+            RequestDecisionReason.SLACK_AUTOMATION -> "The request was resolved by slack automation."
             null -> "None"
         }
     }
@@ -428,6 +429,10 @@ object SlackWorkflowService {
                         }
                     }
 
+                    RequestDecisionReason.SLACK_AUTOMATION -> {
+                        // dont send a message, slack automation already notified the user
+                    }
+
                     RequestDecisionReason.COMMAND_ALREADY_IN_USE -> {
                         val commandInfo = if (relevantCommands.isNotEmpty()) {
                             "\n*Command in use:*\n${relevantCommands.entries.joinToString("\n") { "$BULLET `${it.key}` (${it.value})" }}"
@@ -538,7 +543,11 @@ object SlackWorkflowService {
 
         val eventText = when (decision.status) {
             RequestStatus.APPROVED -> {
-                ":white_check_mark: $user requested $app, and the request was automatically approved."
+                if (decision.reason == RequestDecisionReason.SLACK_AUTOMATION) {
+                    ":slackbot: $user requested $app and slack automation approved it."
+                } else {
+                    ":white_check_mark: $user requested $app, and the request was automatically approved."
+                }
             }
 
             RequestStatus.PENDING_REVIEW -> {
@@ -575,6 +584,15 @@ object SlackWorkflowService {
 
                     RequestDecisionReason.COMMAND_ALREADY_IN_USE -> {
                         ":no_entry_sign: $user requested $app, but the request was automatically denied because one command is already in use by another app."
+                    }
+
+                    RequestDecisionReason.SLACK_AUTOMATION -> {
+                        val status = request.resolution?.status?.lowercase()?.let { status -> SlackResolution.entries.find { it.value == status } }
+                        ":no_entry_sign: $user requested $app" + if (status != SlackResolution.CANCELLED) {
+                            ", but slack automation denied it."
+                        } else {
+                            ", but slack automation cancelled it."
+                        }
                     }
 
                     else -> {
