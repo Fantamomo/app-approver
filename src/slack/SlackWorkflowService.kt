@@ -27,6 +27,8 @@ object SlackWorkflowService {
 
     private val homeAdminMode = ConcurrentHashMap<String, Boolean>()
 
+    private const val MARKETPLACE_URL = "https://slack.com/marketplace/"
+
     private fun statusEmoji(status: RequestStatus): String = when (status) {
         RequestStatus.PENDING_REVIEW -> ":hourglass_flowing_sand:"
         RequestStatus.APPROVED -> ":white_check_mark:"
@@ -267,6 +269,7 @@ object SlackWorkflowService {
         userId: String,
         appName: String,
         requestId: String,
+        appId: String,
         status: RequestStatus,
         reason: RequestDecisionReason?,
         relevantScopes: List<String> = emptyList(),
@@ -274,6 +277,7 @@ object SlackWorkflowService {
         customMessage: String? = null,
         resolvedBy: String? = null
     ) {
+        val appName = if (appId.startsWith('A')) "<$MARKETPLACE_URL$appId|$appName>" else appName
         when (status) {
             RequestStatus.APPROVED -> {
                 if (reason != RequestDecisionReason.SLACK_AUTOMATION) {
@@ -541,7 +545,9 @@ object SlackWorkflowService {
         decision: DecisionResult
     ) {
         val user = "<@${request.user.id}>"
-        val app = "`${request.app.name}`"
+        val app = if (request.app.id.startsWith('A'))
+            "<$MARKETPLACE_URL${request.app.id}|${request.app.name}>"
+            else "`${request.app.name}`"
 
         val eventText = when (decision.status) {
             RequestStatus.APPROVED -> {
@@ -702,9 +708,10 @@ object SlackWorkflowService {
         appName: String,
         userId: String,
         actorId: String,
+        appId: String,
         action: RequestDecision
     ) {
-        val app = "`$appName`"
+        val app = if (appId.startsWith('A')) "<$MARKETPLACE_URL$appId|$appName>" else "`$appName`"
         val user = "<@$userId>"
         val actor = "<@$actorId>"
 
@@ -721,9 +728,10 @@ object SlackWorkflowService {
     suspend fun logUserActionTransparencyEvent(
         appName: String,
         userId: String,
-        action: String
+        action: String,
+        appId: String
     ) {
-        val app = "`$appName`"
+        val app = if (appId.startsWith('A')) "<$MARKETPLACE_URL$appId|$appName>" else "`$appName`"
         val user = "<@$userId>"
         val text = when (action) {
             "REQUEST_REVIEW" -> ":mag: $user requested a manual review for $app."
