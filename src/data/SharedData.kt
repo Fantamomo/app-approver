@@ -31,4 +31,5 @@ object SharedData {
     var authorizedUserId: String by oneTimeSetProperty()
     var authorizedUserName: String by oneTimeSetProperty()
     var workspaces: List<String> by oneTimeSetProperty()
+    var validClientTokens: Boolean by oneTimeSetProperty()
 }
