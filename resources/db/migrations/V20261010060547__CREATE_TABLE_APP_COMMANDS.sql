@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS app_commands (command VARCHAR(32), app VARCHAR(20), active BOOLEAN NOT NULL, CONSTRAINT pk_app_commands PRIMARY KEY (command, app));
