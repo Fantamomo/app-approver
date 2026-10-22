@@ -25,6 +25,7 @@ data class InstallRequestRecord(
     val resolution: RequestDecision?,
     val reviewMessageTs: String?,
     val scopes: List<ScopeIdentity>,
+    val slackResolution: SlackResolution?,
 
     // used in the "value" of buttons in the home view and review threads, to only allow the newest state to be clicked
     // (to prevent buttons clicked on an older state)
