@@ -387,6 +387,7 @@ object InstallRequestRepository {
                 resolution = row[InstallRequestTable.resolution],
                 reviewMessageTs = row[InstallRequestTable.reviewMessageTs],
                 scopes = scopes,
+                slackResolution = row[InstallRequestTable.slackResolution],
                 stateId = row[InstallRequestTable.stateId]
             )
         } catch (e: Exception) {
@@ -421,6 +422,10 @@ object InstallRequestRepository {
                     it[message] = request.message?.take(1000)
                     it[isUserAppCollaborator] = request.isUserAppCollaborator
                     it[requestedAt] = request.dateCreated
+                    it[slackResolution] = request.resolution
+                        ?.status
+                        ?.lowercase()
+                        ?.let { status -> SlackResolution.entries.first { s -> status == s.value } }
                     it[userVerified] = isUserVerified
                     it[automaticDecision] = decision.status
                     it[automaticDecisionReason] = decision.reason
@@ -458,7 +463,8 @@ object InstallRequestRepository {
                     it[InstallRequestHistoryTable.requestId] = request.id
                     it[InstallRequestHistoryTable.status] = decision.status.name
                     it[InstallRequestHistoryTable.actorId] = null
-                    it[InstallRequestHistoryTable.actorType] = "BOT"
+                    it[InstallRequestHistoryTable.actorType] =
+                        if (decision.reason == RequestDecisionReason.SLACK_AUTOMATION) "SLACK " else "BOT"
                     it[InstallRequestHistoryTable.action] = "AUTOMATIC_DECISION"
                     it[InstallRequestHistoryTable.reason] = decision.reason.name
                     it[InstallRequestHistoryTable.message] = decision.explanation

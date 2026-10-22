@@ -1,0 +1,1 @@
+ALTER TABLE install_request ADD slack_resolution VARCHAR(10) NULL;

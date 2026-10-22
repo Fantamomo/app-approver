@@ -99,7 +99,8 @@ object VerificationManager {
                 dateCreated = record.requestedAt,
                 message = record.message,
                 isUserAppCollaborator = record.isUserAppCollaborator,
-                previousResolution = null
+                previousResolution = null,
+                resolution = record.slackResolution?.value?.let { Resolution(it) },
             )
 
             val restrictedScopes = InstallRequestRepository.getRestrictedScopes()

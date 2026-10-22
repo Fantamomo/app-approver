@@ -4,6 +4,7 @@ import com.fantamomo.slack.approver.model.AppDevelopmentType
 import com.fantamomo.slack.approver.model.RequestDecision
 import com.fantamomo.slack.approver.model.RequestDecisionReason
 import com.fantamomo.slack.approver.model.RequestStatus
+import com.fantamomo.slack.approver.model.SlackResolution
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.datetime.timestamp
 
@@ -31,6 +32,11 @@ object InstallRequestTable : Table("install_request") {
 
     val requestedAt = long("requested_at")
     val userVerified = bool("user_verified")
+
+    val slackResolution = enumerationByName<SlackResolution>(
+        "slack_resolution",
+        SlackResolution.entries.maxOf { it.name.length }
+    ).nullable()
 
     val automaticDecision = enumerationByName<RequestStatus>(
         "automatic_decision",

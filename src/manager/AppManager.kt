@@ -6,6 +6,7 @@ import com.fantamomo.slack.approver.data.SharedData
 import com.fantamomo.slack.approver.decision.DecisionContext
 import com.fantamomo.slack.approver.decision.DecisionEngine
 import com.fantamomo.slack.approver.model.AppRequested
+import com.fantamomo.slack.approver.model.RequestDecisionReason
 import com.fantamomo.slack.approver.model.RequestStatus
 import com.fantamomo.slack.approver.slack.SlackWorkflowService
 import com.fantamomo.slack.approver.utils.randomString
@@ -154,7 +155,7 @@ object AppManager {
         val reviewTs = SlackWorkflowService.postInitialReviewMessage(request, isVerified, decision, decisionContext, stateId)
         InstallRequestRepository.saveRequest(request, isVerified, decision, reviewTs, stateId)
 
-        if (decision.status == RequestStatus.APPROVED) {
+        if (decision.status == RequestStatus.APPROVED && decision.reason != RequestDecisionReason.SLACK_AUTOMATION) {
             SlackManager.approveApp(request.app.id, request.team?.id, request.enterprise?.id, request.id)
         }
 
