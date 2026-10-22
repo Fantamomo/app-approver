@@ -7,6 +7,9 @@ enum class RequestDecision {
     WITHDRAWN,
     UNDONE;
 
+    val final: Boolean
+        get() = this == APPROVED || this == DENIED || this == RESTRICTED
+
     fun toRequestStatus(): RequestStatus {
         return when (this) {
             APPROVED -> RequestStatus.APPROVED

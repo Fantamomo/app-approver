@@ -50,6 +50,17 @@ object DecisionEngine {
             )
         }
 
+        val commandsInUse = context.commandsAllReadyInUse
+
+        if (commandsInUse.isNotEmpty()) {
+            return DecisionResult(
+                status = RequestStatus.DENIED,
+                reason = RequestDecisionReason.COMMAND_ALREADY_IN_USE,
+                explanation = "One or more commands are already in use by another request.",
+                relevantCommands = commandsInUse
+            )
+        }
+
         // 4. check all the scopes
         val nonReviewableRestrictedScopes = mutableListOf<String>()
         val reviewableRestrictedScopes = mutableListOf<String>()

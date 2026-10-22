@@ -4,5 +4,8 @@ enum class RequestStatus {
     PENDING_REVIEW,
     APPROVED,
     DENIED,
-    WITHDRAWN
+    WITHDRAWN;
+
+    val final: Boolean
+        get() = this == APPROVED || this == DENIED
 }
