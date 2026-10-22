@@ -153,6 +153,7 @@ object SlackInteractionHandler {
             userId = record.userId,
             appName = record.appName,
             requestId = requestId,
+            appId = record.appId,
             status = RequestStatus.APPROVED,
             reason = null,
             resolvedBy = userId
@@ -162,6 +163,7 @@ object SlackInteractionHandler {
             appName = record.appName,
             userId = record.userId,
             actorId = userId,
+            appId = record.appId,
             action = RequestDecision.APPROVED
         )
     }
@@ -265,6 +267,7 @@ object SlackInteractionHandler {
             appName = record.appName,
             userId = record.userId,
             actorId = userId,
+            appId = record.appId,
             action = RequestDecision.UNDONE
         )
     }
@@ -352,6 +355,7 @@ object SlackInteractionHandler {
             userId = record.userId,
             appName = record.appName,
             requestId = requestId,
+            appId = record.appId,
             status = RequestStatus.DENIED,
             reason = null,
             customMessage = reason,
@@ -362,6 +366,7 @@ object SlackInteractionHandler {
             appName = record.appName,
             userId = record.userId,
             actorId = userId,
+            appId = record.appId,
             action = RequestDecision.DENIED
         )
     }
@@ -431,6 +436,7 @@ object SlackInteractionHandler {
             userId = record.userId,
             appName = record.appName,
             requestId = requestId,
+            appId = record.appId,
             status = RequestStatus.DENIED,
             reason = RequestDecisionReason.RESTRICTED_APPLICATION,
             customMessage = reason,
@@ -441,6 +447,7 @@ object SlackInteractionHandler {
             appName = record.appName,
             userId = record.userId,
             actorId = userId,
+            appId = record.appId,
             action = RequestDecision.RESTRICTED
         )
     }
@@ -512,6 +519,7 @@ object SlackInteractionHandler {
             userId = userId,
             appName = record.appName,
             requestId = requestId,
+            appId = record.appId,
             status = RequestStatus.PENDING_REVIEW,
             reason = RequestDecisionReason.USER_REQUESTED_REVIEW
         )
@@ -519,7 +527,8 @@ object SlackInteractionHandler {
         SlackWorkflowService.logUserActionTransparencyEvent(
             appName = record.appName,
             userId = userId,
-            action = "REQUEST_REVIEW"
+            action = "REQUEST_REVIEW",
+            appId = record.appId
         )
     }
 
@@ -572,6 +581,7 @@ object SlackInteractionHandler {
             userId = userId,
             appName = record.appName,
             requestId = requestId,
+            appId = record.appId,
             status = RequestStatus.WITHDRAWN,
             reason = RequestDecisionReason.USER_WITHDRAWN
         )
@@ -579,7 +589,8 @@ object SlackInteractionHandler {
         SlackWorkflowService.logUserActionTransparencyEvent(
             appName = record.appName,
             userId = userId,
-            action = "WITHDRAW"
+            action = "WITHDRAW",
+            appId = record.appId
         )
     }
 

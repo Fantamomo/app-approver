@@ -165,6 +165,7 @@ object VerificationManager {
                     userId = userId,
                     appName = record.appName,
                     requestId = record.requestId,
+                    appId = record.appId,
                     status = RequestStatus.APPROVED,
                     reason = RequestDecisionReason.USER_VERIFIED,
                 )

@@ -163,6 +163,7 @@ object AppManager {
             userId = request.user.id,
             appName = request.app.name,
             requestId = request.id,
+            appId = request.app.id,
             status = decision.status,
             reason = decision.reason,
             relevantScopes = decision.relevantRestrictedScopes,
