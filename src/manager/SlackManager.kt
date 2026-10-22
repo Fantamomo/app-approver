@@ -40,16 +40,18 @@ object SlackManager {
     suspend fun sendMessage(
         channel: String,
         threadTs: String? = null,
+        unfurl: Boolean? = false,
         builder: LayoutBlockDsl.() -> Unit
     ): String? {
         contract { callsInPlace(builder, InvocationKind.EXACTLY_ONCE) }
         val blocks = withBlocks(builder)
-        return sendMessage(channel, threadTs, blocks)
+        return sendMessage(channel, threadTs, unfurl, blocks)
     }
 
     suspend fun sendMessage(
         channel: String,
         threadTs: String? = null,
+        unfurl: Boolean? = false,
         blocks: List<LayoutBlock>
     ): String? {
         return try {
@@ -57,6 +59,10 @@ object SlackManager {
                 addProperty("channel", channel)
                 if (threadTs != null) {
                     addProperty("thread_ts", threadTs)
+                }
+                if (unfurl != null) {
+                    addProperty("unfurl_links", unfurl)
+                    addProperty("unfurl_media", unfurl)
                 }
                 add("blocks", SharedData.gson.toJsonTree(blocks))
             }
@@ -89,6 +95,7 @@ object SlackManager {
     suspend fun sendTextMessage(
         channel: String,
         text: String,
+        unfurl: Boolean? = false,
         threadTs: String? = null
     ): String? {
         return try {
@@ -97,6 +104,10 @@ object SlackManager {
                 addProperty("text", text)
                 if (threadTs != null) {
                     addProperty("thread_ts", threadTs)
+                }
+                if (unfurl != null) {
+                    addProperty("unfurl_links", unfurl)
+                    addProperty("unfurl_media", unfurl)
                 }
             }
 
@@ -290,18 +301,20 @@ object SlackManager {
 
     suspend fun sendDm(
         userId: String,
+        unfurl: Boolean? = false,
         builder: LayoutBlockDsl.() -> Unit
     ): String? {
         val channelId = openDm(userId) ?: return null
-        return sendMessage(channelId, null, builder)
+        return sendMessage(channelId, null, unfurl, builder)
     }
 
     suspend fun sendDmText(
         userId: String,
+        unfurl: Boolean? = false,
         text: String
     ): String? {
         val channelId = openDm(userId) ?: return null
-        return sendTextMessage(channelId, text)
+        return sendTextMessage(channelId, text, unfurl)
     }
 
     suspend fun openView(
