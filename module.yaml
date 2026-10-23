@@ -31,6 +31,8 @@ test-dependencies:
   - $ktor.server.testHost
 
 settings:
+  jvm:
+    release: 21
   ktor: enabled
   kotlin:
     serialization: enabled
