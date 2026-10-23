@@ -18,18 +18,17 @@ The configuration file can be specified using the `CONFIG_FILE_PATH` environment
 
 | Config                 | Description                                                                        | Required | Default                                      | Environment Variable   |
 |------------------------|------------------------------------------------------------------------------------|---------:|----------------------------------------------|------------------------|
-| `server.port`          | The port the HTTP server should listen on.                                         |       No | `80`                                         | —                      |
-| `server.host`          | The host/interface the server should bind to.                                      |       No | `0.0.0.0`                                    | —                      |
+| `server.port`          | The port the HTTP server should listen on.                                         |       No | `80`                                         | `SERVER_PORT`          |
+| `server.host`          | The host/interface the server should bind to.                                      |       No | `0.0.0.0`                                    | `SERVER_HOST`          |
 | `postgres.url`         | The R2DBC URL of the PostgreSQL database.                                          |       No | `r2dbc:postgresql://localhost:5432/postgres` | `POSTGRES_URL`         |
 | `postgres.user`        | The username for the PostgreSQL database.                                          |       No | `postgres`                                   | `POSTGRES_USER`        |
 | `postgres.password`    | The password for the PostgreSQL database.                                          |       No | `postgres`                                   | `POSTGRES_PASSWORD`    |
 | `slack.bot.token`      | The Slack bot token.                                                               |  **Yes** | —                                            | `SLACK_BOT_TOKEN`      |
 | `slack.user.token`     | The Slack user token.                                                              |  **Yes** | —                                            | `SLACK_USER_TOKEN`     |
 | `slack.app.token`      | The Slack app token used for Socket Mode.                                          |       No | Empty                                        | `SLACK_APP_TOKEN`      |
-| `slack.signing.secret` | The Slack Signing Secret to verify requests from slack in HTTP Mode                |       No | Empty                                        | `SLACK_APP_TOKEN`      |
+| `slack.signing.secret` | The Slack Signing Secret to verify requests from slack in HTTP Mode                |       No | Empty                                        | `SLACK_SIGNING_SECRET` |
 | `slack.channel.review` | The Slack channel used for reviews.                                                |  **Yes** | —                                            | `SLACK_CHANNEL_REVIEW` |
 | `slack.channel.log`    | The Slack channel used for review logs.                                            |  **Yes** | —                                            | `SLACK_CHANNEL_LOG`    |
-| `slack.team.id`        | The Slack team ID.                                                                 |  **Yes** | —                                            | `SLACK_TEAM_ID`        |
 | `socket.mode`          | Whether to use Slack Socket Mode instead of the HTTP API.                          |       No | `false`                                      | `SOCKET_MODE`          |
 | `admin.users`          | Comma Seperated List of users (starting with U) that can execute the command       |       No | —                                            | `ADMIN_USERS`          |
 | `slack.slash.command`  | Must be the same as the command you registered in Slack/Manifest (starting with /) |       No | `/app-approver`                              | `SLACK_SLASH_COMMAND`  |

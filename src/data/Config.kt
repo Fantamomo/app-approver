@@ -21,13 +21,15 @@ object Config {
     val PORT by int(
         key = "server.port",
         default = 80,
-        description = "The port the HTTP server should listen on."
+        description = "The port the HTTP server should listen on.",
+        canBeSetByEnv = true
     )
 
     val HOST by string(
         key = "server.host",
         default = "0.0.0.0",
-        description = "The host/interface the server should bind to."
+        description = "The host/interface the server should bind to.",
+        canBeSetByEnv = true
     )
 
     val POSTGRES_URL: String by string(
@@ -292,8 +294,6 @@ object Config {
             configPath.absolutePathString()
         )
 
-        configPath.parent?.createDirectories()
-
         val defaultConfig = buildString {
             appendLine("# Bot Approver Configuration")
             appendLine()
@@ -312,6 +312,7 @@ object Config {
         }
 
         try {
+            configPath.parent?.createDirectories()
             configPath.outputStream().bufferedWriter().use {
                 it.write(defaultConfig)
             }
@@ -321,14 +322,19 @@ object Config {
                 configPath.absolutePathString()
             )
         } catch (ex: IOException) {
-            throw IllegalStateException(
-                "Failed to create config file at '${configPath.absolutePathString()}'.",
-                ex
+            logger.warn(
+                "Could not create default config file at '{}': {}",
+                configPath.absolutePathString(),
+                ex.message
             )
         }
     }
 
     private fun loadProperties() {
+        if (!configPath.exists()) {
+            logger.info("Config file '{}' does not exist, relying on environment variables and defaults.", configPath.absolutePathString())
+            return
+        }
         try {
             configPath.inputStream().use(properties::load)
 
