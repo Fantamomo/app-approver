@@ -10,6 +10,7 @@ import org.jetbrains.exposed.v1.r2dbc.*
 import org.jetbrains.exposed.v1.r2dbc.transactions.suspendTransaction
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.net.JarURLConnection
 import java.net.URLDecoder
 import java.util.jar.JarFile
 import kotlin.time.Clock
@@ -204,7 +205,7 @@ object DatabaseManager {
         }
     }
 
-    private fun loadAllMigrationFileNames(): List<String> {
+    internal fun loadAllMigrationFileNames(): List<String> {
         val result = mutableListOf<String>()
         val resources = javaClass.classLoader.getResources(MIGRATION_FOLDER_PATH)
 
@@ -212,33 +213,47 @@ object DatabaseManager {
             val url = resources.nextElement()
             when (url.protocol) {
                 "jar" -> {
-                    val path = url.path
-                        .removePrefix("file:")
-                        .substringBefore("!")
+                    try {
+                        val connection = url.openConnection()
+                        if (connection is JarURLConnection) {
+                            connection.jarFile.use { jar ->
+                                jar.entries()
+                                    .asSequence()
+                                    .forEach { entry ->
+                                        if (!entry.isDirectory && entry.name.endsWith(".sql") && entry.name.contains("$MIGRATION_FOLDER_PATH/")) {
+                                            result.add(entry.name.substringAfter("$MIGRATION_FOLDER_PATH/"))
+                                        }
+                                    }
+                            }
+                        } else {
+                            val path = url.path
+                                .removePrefix("file:")
+                                .removePrefix("nested:")
+                                .substringBefore("!")
 
-                    JarFile(
-                        URLDecoder.decode(path, "UTF-8")
-                    ).use { jar ->
-                        jar.entries()
-                            .asSequence()
-                            .filter {
-                                it.name.startsWith(MIGRATION_FOLDER_PATH) &&
-                                        !it.isDirectory &&
-                                        it.name.endsWith(".sql")
+                            JarFile(
+                                URLDecoder.decode(path, "UTF-8")
+                            ).use { jar ->
+                                jar.entries()
+                                    .asSequence()
+                                    .forEach { entry ->
+                                        if (!entry.isDirectory && entry.name.endsWith(".sql") && entry.name.contains("$MIGRATION_FOLDER_PATH/")) {
+                                            result.add(entry.name.substringAfter("$MIGRATION_FOLDER_PATH/"))
+                                        }
+                                    }
                             }
-                            .map {
-                                it.name.removePrefix(
-                                    "$MIGRATION_FOLDER_PATH/"
-                                )
-                            }
-                            .forEach(result::add)
+                        }
+                    } catch (e: Exception) {
+                        logger.warn("Failed to load migration files from jar url: $url", e)
                     }
                 }
 
                 "file" -> {
-                    val file = File(
-                        url.path.removePrefix("file:")
-                    )
+                    val file = try {
+                        File(url.toURI())
+                    } catch (_: Exception) {
+                        File(url.path.removePrefix("file:"))
+                    }
                     if (!file.isDirectory) continue
 
                     file.listFiles()

@@ -107,7 +107,8 @@ object VerificationManager {
             val isAppRestricted = InstallRequestRepository.isAppRestricted(record.appId)
             val previousRequests =
                 InstallRequestRepository.findPreviousRequests(record.appId, record.userId, record.requestId)
-            val appCommands = AppCommandManager.indexCommands(record.appId)
+            val appCommands =
+                if (AppCommandManager.isValid()) AppCommandManager.indexCommands(record.appId) else emptyList()
             val commandsAllReadyInUse =
                 if (appCommands.isEmpty()) emptyMap()
                 else AppCommandManager.returnCommandOwners(appCommands.map { it.name })

@@ -133,7 +133,7 @@ object AppManager {
         val isAppRestricted = InstallRequestRepository.isAppRestricted(request.app.id)
         val previousRequests =
             InstallRequestRepository.findPreviousRequests(request.app.id, request.user.id, request.id)
-        val appCommands = AppCommandManager.indexCommands(request.app.id)
+        val appCommands = if (AppCommandManager.isValid()) AppCommandManager.indexCommands(request.app.id) else emptyList()
         val commandsAllReadyInUse =
             if (appCommands.isEmpty()) emptyMap()
             else AppCommandManager.returnCommandOwners(appCommands.map { it.name })

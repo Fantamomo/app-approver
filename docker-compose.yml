@@ -1,0 +1,50 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bot-approver
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-80}:80"
+    environment:
+      - POSTGRES_URL=r2dbc:postgresql://postgres:5432/${POSTGRES_DB:-bot_approver}
+      - POSTGRES_USER=${POSTGRES_USER:-bot_approver}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secretpassword}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - SLACK_USER_TOKEN=${SLACK_USER_TOKEN:-}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN:-}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET:-}
+      - SLACK_CLIENT_TOKEN=${SLACK_CLIENT_TOKEN:-}
+      - SLACK_SESSION_COOKIE=${SLACK_SESSION_COOKIE:-}
+      - SLACK_CHANNEL_REVIEW=${SLACK_CHANNEL_REVIEW:-}
+      - SLACK_CHANNEL_LOG=${SLACK_CHANNEL_LOG:-}
+      - SOCKET_MODE=${SOCKET_MODE:-false}
+      - ADMIN_USERS=${ADMIN_USERS:-}
+      - SLACK_SLASH_COMMAND=${SLACK_SLASH_COMMAND:-/app-approver}
+      - SERVER_PORT=80
+      - SERVER_HOST=0.0.0.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:19rc1
+    container_name: bot-approver-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-bot_approver}
+      - POSTGRES_USER=${POSTGRES_USER:-bot_approver}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secretpassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bot_approver} -d ${POSTGRES_DB:-bot_approver}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+volumes:
+  postgres_data:
