@@ -33,6 +33,40 @@ The configuration file can be specified using the `CONFIG_FILE_PATH` environment
 | `admin.users`          | Comma Seperated List of users (starting with U) that can execute the command       |       No | —                                            | `ADMIN_USERS`          |
 | `slack.slash.command`  | Must be the same as the command you registered in Slack/Manifest (starting with /) |       No | `/app-approver`                              | `SLACK_SLASH_COMMAND`  |
 
+### Running with Docker & Docker Compose
+
+#### Using Docker Compose (Recommended)
+
+1. Copy the sample environment file and fill in your Slack and database credentials:
+   ```bash
+   cp .env.example .env
+   ```
+2. Build and start the bot and PostgreSQL services:
+   ```bash
+   docker compose up -d
+   ```
+
+#### Using Docker directly
+
+1. Build the Docker image:
+   ```bash
+   docker build -t bot-approver .
+   ```
+2. Run the container:
+   ```bash
+   docker run -d \
+     --name bot-approver \
+     -p 80:80 \
+     -e POSTGRES_URL="r2dbc:postgresql://host.docker.internal:5432/bot_approver" \
+     -e POSTGRES_USER="bot_approver" \
+     -e POSTGRES_PASSWORD="secretpassword" \
+     -e SLACK_BOT_TOKEN="xoxb-..." \
+     -e SLACK_USER_TOKEN="xoxp-..." \
+     -e SLACK_CHANNEL_REVIEW="C12345678" \
+     -e SLACK_CHANNEL_LOG="C87654321" \
+     bot-approver
+   ```
+
 ### Managing restrictions and team members
 
 Restrictions and team members can be managed with the `/app-approver` command. To execute the command, your user id must be in the `admin.users` list.
