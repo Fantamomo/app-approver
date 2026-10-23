@@ -1,0 +1,12 @@
+.git
+.gitignore
+.idea
+.junie
+build
+local
+*.iml
+config.properties
+.env
+.env.*
+!.env.example
+*.md
