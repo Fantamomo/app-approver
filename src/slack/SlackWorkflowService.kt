@@ -47,6 +47,9 @@ object SlackWorkflowService {
     }
 
     private fun formatReason(reason: RequestDecisionReason?, resolutionMessage: String?, resolvedBy: String?): String {
+        if (resolvedBy == "THIRD_PARTY") {
+            return "The request was resolved by a third party"
+        }
         if (resolvedBy != null) {
             val msg = if (!resolutionMessage.isNullOrBlank()) " ($resolutionMessage)" else ""
             return "Resolved by <@$resolvedBy>$msg"
@@ -887,6 +890,53 @@ object SlackWorkflowService {
         val closeObj = JsonObject()
         closeObj.addProperty("type", "plain_text")
         closeObj.addProperty("text", "OK")
+        closeObj.addProperty("emoji", true)
+        view.add("close", closeObj)
+
+        val blocks = JsonArray()
+
+        val section = JsonObject()
+        section.addProperty("type", "section")
+
+        val text = JsonObject()
+        text.addProperty("type", "mrkdwn")
+        text.addProperty("text", message)
+        section.add("text", text)
+        blocks.add(section)
+
+        view.add("blocks", blocks)
+
+        return view
+    }
+
+    fun buildAreYouSureModal(
+        title: String,
+        callbackId: String,
+        message: String,
+        metadata: String,
+        submitButton: String = "I am sure",
+        cancelButton: String = "Cancel"
+    ): JsonObject {
+        val view = JsonObject()
+        view.addProperty("type", "modal")
+        view.addProperty("callback_id", callbackId)
+        view.addProperty("private_metadata", metadata)
+
+        val titleObj = JsonObject()
+        titleObj.addProperty("type", "plain_text")
+        titleObj.addProperty("text", title.take(24))
+        titleObj.addProperty("emoji", true)
+        view.add("title", titleObj)
+
+        val submitObj = JsonObject()
+        submitObj.addProperty("type", "plain_text")
+        submitObj.addProperty("text", submitButton.take(24))
+        submitObj.addProperty("emoji", true)
+        view.add("submit", submitObj)
+
+        val closeObj = JsonObject()
+        closeObj.addProperty("type", "plain_text")
+        closeObj.addProperty("text", cancelButton.take(24))
         closeObj.addProperty("emoji", true)
         view.add("close", closeObj)
 
