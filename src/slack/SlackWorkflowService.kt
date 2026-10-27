@@ -183,32 +183,52 @@ object SlackWorkflowService {
             }
         }
 
+        val unfurlDomainsText = if (decisionContext.unfurlDomains.isEmpty()) {
+            "None"
+        } else {
+            decisionContext.unfurlDomains.joinToString("\n") { domain ->
+                "$BULLET `$domain`"
+            }
+        }
+
         // while we theoretically could have used the rich text builder, it is just easier this way
         val detailsText = buildString {
-            append("*Request ID:* `${request.id}`\n")
-            append("*User:* <@${request.user.id}> (Verified: $isUserVerified, Collaborator: ${request.isUserAppCollaborator})\n")
-            if (request.team != null) append("*Team:* `${request.team.id}` (${request.team.name})\n")
-            if (request.enterprise != null) append("*Enterprise:* `${request.enterprise.id}` (${request.enterprise.name})\n")
-            if (!request.message.isNullOrBlank()) append("*User Message:* ${request.message}\n")
+            appendLine("*Request ID:* `${request.id}`")
+            appendLine("*User:* <@${request.user.id}> (Verified: $isUserVerified, Collaborator: ${request.isUserAppCollaborator})")
+            if (request.team != null) appendLine("*Team:* `${request.team.id}` (${request.team.name})")
+            if (request.enterprise != null) appendLine("*Enterprise:* `${request.enterprise.id}` (${request.enterprise.name})")
+            if (!request.message.isNullOrBlank()) appendLine("*User Message:* ${request.message}")
 
-            append("\n*App Details:*\n")
-            append("$BULLET ID: `${request.app.id}`\n")
-            append("$BULLET Name: ${request.app.name}\n")
-            append("$BULLET Developer Type: ${request.app.developerType}\n")
-            if (request.app.description.isNotBlank()) append("$BULLET Description: ${request.app.description}\n")
+            appendLine("\n*App Details:*")
+            appendLine("$BULLET ID: `${request.app.id}`")
+            appendLine("$BULLET Name: ${request.app.name}")
+            appendLine("$BULLET Developer Type: ${request.app.developerType}")
+            if (request.app.description.isNotBlank()) appendLine("$BULLET Description: ${request.app.description}")
 
-            append("\n*Requested Scopes:*\n$scopesText\n")
+            appendLine("\n*Requested Scopes:*\n$scopesText")
 
-            append("\n*Slash Commands:*\n$commandText\n")
+            append("\n*Slash Commands:*")
+            if (commandText == "None") {
+                append(" None")
+            } else {
+                appendLine("\n$commandText")
+            }
 
-            append("\n*Initial Evaluation:*\n")
-            append("$BULLET Status: ${decision.status}\n")
-            append("$BULLET Reason: ${decision.reason}\n")
-            if (decision.explanation.isNotBlank()) append("$BULLET Explanation: ${decision.explanation}\n")
+            append("\n*Unfurl Domains:*")
+            if (unfurlDomainsText == "None") {
+                append(" None")
+            } else {
+                appendLine("\n$unfurlDomainsText")
+            }
+
+            appendLine("\n*Initial Evaluation:*")
+            appendLine("$BULLET Status: ${decision.status}")
+            appendLine("$BULLET Reason: ${decision.reason}")
+            if (decision.explanation.isNotBlank()) appendLine("$BULLET Explanation: ${decision.explanation}")
             if (decision.relevantRestrictedScopes.isNotEmpty()) {
                 append("$BULLET Relevant Scopes: `")
                 append(decision.relevantRestrictedScopes.joinToString(", "))
-                append("`\n")
+                appendLine("`")
             }
         }
 

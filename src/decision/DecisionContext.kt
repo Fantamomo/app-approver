@@ -13,4 +13,5 @@ data class DecisionContext(
     val previousRequests: List<PreviousRequestRecord>,
     val commands: List<SlashCommand>,
     val commandsAllReadyInUse: Map<String, String>,
+    val unfurlDomains: Set<String>
 )

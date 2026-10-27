@@ -124,6 +124,8 @@ object VerificationManager {
                     previousRequests = previousRequests,
                     commandsAllReadyInUse = commandsAllReadyInUse,
                     commands = appCommands,
+                    // unfurlDomains does currently not influence the decisions
+                    unfurlDomains = emptySet()
                 )
             )
 
