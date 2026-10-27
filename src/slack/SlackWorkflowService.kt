@@ -256,9 +256,10 @@ object SlackWorkflowService {
         reviewMessageTs: String,
         actorId: String?,
         actionText: String,
-        reason: String? = null
+        reason: String? = null,
+        actorName: String? = null
     ) {
-        val actor = if (actorId != null) "<@$actorId>" else "System"
+        val actor = if (actorId != null) "<@$actorId>" else (actorName ?: "System")
         val reasonStr = if (!reason.isNullOrBlank()) "\n*Reason / Note:* $reason" else ""
         SlackManager.sendMessage(Config.SLACK_CHANNEL_REVIEW, reviewMessageTs) {
             section {

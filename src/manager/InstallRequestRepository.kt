@@ -694,4 +694,19 @@ object InstallRequestRepository {
             throw e
         }
     }
+
+    suspend fun allPendingRequests(): List<String> {
+        return try {
+            DatabaseManager.transaction {
+                InstallRequestTable.select(InstallRequestTable.requestId)
+                    .where { InstallRequestTable.status inList listOf(RequestStatus.DENIED, RequestStatus.PENDING_REVIEW) and InstallRequestTable.resolution.isNull() }
+                    .map { it[InstallRequestTable.requestId] }
+                    .toList()
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logger.error("Error occurred while fetching pending requests", e)
+            throw e
+        }
+    }
 }
