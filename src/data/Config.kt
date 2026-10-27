@@ -6,6 +6,7 @@ import java.nio.file.Path
 import java.util.*
 import kotlin.io.path.*
 import kotlin.properties.ReadOnlyProperty
+import kotlin.reflect.KProperty
 
 @Suppress("SameParameterValue")
 object Config {
@@ -25,108 +26,92 @@ object Config {
         key = "server.port",
         default = 80,
         description = "The port the HTTP server should listen on.",
-        canBeSetByEnv = true
     )
 
     val HOST by string(
         key = "server.host",
         default = "0.0.0.0",
         description = "The host/interface the server should bind to.",
-        canBeSetByEnv = true
     )
 
     val POSTGRES_URL: String by string(
         key = "postgres.url",
         default = "r2dbc:postgresql://localhost:5432/postgres",
         description = "The JDBC URL of the Postgres database (prefixed with 'r2dbc:postgresql:').",
-        canBeSetByEnv = true
     )
 
     val POSTGRES_USER: String by string(
         key = "postgres.user",
         default = "postgres",
         description = "The username for the Postgres database.",
-        canBeSetByEnv = true
     )
 
     val POSTGRES_PASSWORD: String by string(
         key = "postgres.password",
         default = "postgres",
         description = "The password for the Postgres database.",
-        canBeSetByEnv = true
     )
 
     val SLACK_BOT_TOKEN: String by string(
         key = "slack.bot.token",
         description = "The Slack bot token.",
-        canBeSetByEnv = true
     )
 
     val SLACK_USER_TOKEN: String by string(
         key = "slack.user.token",
         description = "The Slack user token.",
-        canBeSetByEnv = true
     )
 
     val SLACK_APP_TOKEN: String by string(
         key = "slack.app.token",
         description = "The Slack app token. (Used in Socket Mode)",
         default = "",
-        canBeSetByEnv = true
     )
 
     val SLACK_SIGNING_SECRET: String by string(
         key = "slack.signing.secret",
         description = "The Slack signing secret (Used to verify HTTP requests from slack)",
         default = "",
-        canBeSetByEnv = true
     )
 
     val SLACK_CLIENT_TOKEN: String by string(
         key = "slack.client.token",
         description = "The Slack client token. (Required for command checking)",
         default = "",
-        canBeSetByEnv = true
     )
 
     val SLACK_SESSION_COOKIE: String by string(
         key = "slack.session.cookie",
         description = "The Slack session cookie starting with 'xoxd-' (Cookie name is 'd') (Required for command checking)",
         default = "",
-        canBeSetByEnv = true
     )
 
     val SLACK_CHANNEL_REVIEW: String by string(
         key = "slack.channel.review",
         description = "The Slack channel for reviews.",
-        canBeSetByEnv = true
     )
 
     val SLACK_CHANNEL_LOG: String by string(
         key = "slack.channel.log",
         description = "The Slack channel for review logs.",
-        canBeSetByEnv = true
     )
 
     val SOCKET_MODE: Boolean by boolean(
         key = "socket.mode",
         description = "Whether to use socket mode.",
         default = false,
-        canBeSetByEnv = true
     )
 
-    val ADMIN_USERS: String by string(
+    val ADMIN_USERS: Set<String> by string(
         key = "admin.users",
         description = "Comma separated list of users with permission to the admin commands.",
         default = "",
-        canBeSetByEnv = true
-    )
+    ).map { it.split(",").map { it.trim() }.filter { it.startsWith('W') || it.startsWith('U') }.toSet() }
 
     val SLACK_SLASH_COMMAND: String by string(
         key = "slack.slash.command",
         description = "The Slack slash command. (Used to react to the slash command and for messages)",
         default = "/app-approver",
-        canBeSetByEnv = true
     )
 
     fun init() {
@@ -140,15 +125,13 @@ object Config {
         key: String,
         default: String? = null,
         description: String,
-        canBeSetByEnv: Boolean = false
-    ) = register(key, default, description, canBeSetByEnv) { it }
+    ) = register(key, default, description) { it }
 
     private fun int(
         key: String,
         default: Int? = null,
         description: String,
-        canBeSetByEnv: Boolean = false
-    ) = register(key, default, description, canBeSetByEnv) { value ->
+    ) = register(key, default, description) { value ->
         value.toIntOrNull()
             ?: throw IllegalArgumentException("Expected a valid integer.")
     }
@@ -157,8 +140,7 @@ object Config {
         key: String,
         default: Boolean? = null,
         description: String,
-        canBeSetByEnv: Boolean = true
-    ) = register(key, default, description, canBeSetByEnv) { value ->
+    ) = register(key, default, description) { value ->
         when (value.lowercase()) {
             "true" -> true
             "false" -> false
@@ -170,8 +152,7 @@ object Config {
         key: String,
         default: Path? = null,
         description: String,
-        canBeUsed: Boolean = false,
-    ) = register(key, default, description, canBeUsed) { value ->
+    ) = register(key, default, description) { value ->
         Path(value).toAbsolutePath()
     }
 
@@ -179,26 +160,19 @@ object Config {
         key: String,
         default: T?,
         description: String,
-        canBeSetByEnv: Boolean,
         parser: (String) -> T
-    ): ReadOnlyProperty<Any?, T> {
+    ): ReadOnlyProperty<Config, T> {
 
         val entry = ConfigEntry(
             key = key,
             default = default,
             description = description,
-            parser = parser,
-            canBeSetByEnv = canBeSetByEnv
+            parser = parser
         )
 
         entries += entry
 
-        return ReadOnlyProperty { _, property ->
-            entry.value
-                ?: throw IllegalStateException(
-                    "Config '${property.name}' was accessed before initialization."
-                )
-        }
+        return entry
     }
 
     private fun validateAndLoad() {
@@ -211,26 +185,23 @@ object Config {
             entry as ConfigEntry<Any>
 
 
-            if (entry.canBeSetByEnv) {
-                val envKey = entry.key.uppercase().replace('.', '_')
-                val envValue = System.getenv(envKey)
-                if (envValue != null) {
-                    try {
-                        entry.setValue(entry.parser(envValue.trim()))
-                        logger.info(
-                            "Config '{}' is set via environment variable '{}'.",
-                            entry.key,
-                            envKey
-                        )
-                        continue
-                    } catch (ex: Exception) {
-                        logger.warn(
-                            "Failed to parse environment variable '{}'. Value: '{}'. Reason: {}",
-                            envKey,
-                            envValue,
-                            ex.message
-                        )
-                    }
+            val envValue = System.getenv(entry.envKey)
+            if (envValue != null) {
+                try {
+                    entry.setValue(entry.parser(envValue.trim()))
+                    logger.info(
+                        "Config '{}' is set via environment variable '{}'.",
+                        entry.key,
+                        entry.envKey
+                    )
+                    continue
+                } catch (ex: Exception) {
+                    logger.warn(
+                        "Failed to parse environment variable '{}'. Value: '{}'. Reason: {}",
+                        entry.envKey,
+                        envValue,
+                        ex.message
+                    )
                 }
             }
 
@@ -293,13 +264,10 @@ object Config {
         }
 
         for (entry in entries) {
-            if (entry.canBeSetByEnv) {
-                val envKey = entry.key.uppercase().replace('.', '_')
-                if (System.getenv(envKey) != null) {
-                    logger.info("A environment ($envKey) variable is provided, skipping config creation.")
-                    skipConfigCreation = true
-                    return
-                }
+            if (System.getenv(entry.envKey) != null) {
+                logger.info("A environment ($entry.envKey) variable is provided, skipping config creation.")
+                skipConfigCreation = true
+                return
             }
         }
 
@@ -346,7 +314,10 @@ object Config {
 
     private fun loadProperties() {
         if (!configPath.exists()) {
-            if (skipConfigCreation) logger.info("Config file '{}' does not exist, relying on environment variables and defaults.", configPath.absolutePathString())
+            if (skipConfigCreation) logger.info(
+                "Config file '{}' does not exist, relying on environment variables and defaults.",
+                configPath.absolutePathString()
+            )
             return
         }
         try {
@@ -364,20 +335,52 @@ object Config {
         }
     }
 
-    private class ConfigEntry<T>(
+    private fun <I, O> ReadOnlyProperty<Config, I>.map(mapper: (I) -> O): ReadOnlyProperty<Config, O> = Mapper(this, mapper)
+
+    private class Mapper<I, O>(
+        private val input: ReadOnlyProperty<Config, I>,
+        private val mapper: (I) -> O
+    ) : ReadOnlyProperty<Config, O> {
+        var mapped: Boolean = false
+        var value: O? = null
+
+        override fun getValue(
+            thisRef: Config,
+            property: KProperty<*>
+        ): O {
+            if (mapped) {
+                return value!!
+            }
+            value = mapper(input.getValue(thisRef, property))
+            mapped = true
+            return value!!
+        }
+    }
+
+        private class ConfigEntry<T>(
         val key: String,
         val default: T?,
         val description: String,
         val parser: (String) -> T,
-        val canBeSetByEnv: Boolean = false
-    ) {
+    ): ReadOnlyProperty<Config, T> {
         private var internalValue: T? = null
+
+        val envKey = key.uppercase().replace('.', '_')
 
         val value: T?
             get() = internalValue
 
         fun setValue(value: T) {
             internalValue = value
+        }
+
+        override fun getValue(
+            thisRef: Config,
+            property: KProperty<*>
+        ): T {
+            return internalValue ?: throw IllegalStateException(
+                "Config entry '${property.name}' has not been initialized."
+            )
         }
     }
 }
