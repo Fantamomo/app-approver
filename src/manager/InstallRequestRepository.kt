@@ -611,6 +611,20 @@ object InstallRequestRepository {
         }
     }
 
+    suspend fun teamMemberCount(): Long {
+        return try {
+            DatabaseManager.transaction {
+                ApproveTeamMemberTable.selectAll()
+                    .where { ApproveTeamMemberTable.deleted eq false }
+                    .count()
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logger.error("Error occurred while loading team members", e)
+            throw e
+        }
+    }
+
     suspend fun addTeamMember(member: String): Boolean {
         return try {
             DatabaseManager.transaction {
