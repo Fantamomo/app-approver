@@ -116,6 +116,12 @@ object Config {
         description = "The Slack slash command used for interactions and messages."
     )
 
+    val ALLOW_APPROVING_OWN by boolean(
+        key = "allow.approving.own",
+        default = true,
+        description = "Whether to allow team members to approve their own requests."
+    )
+
     fun init() {
         if (initialized) return
 
