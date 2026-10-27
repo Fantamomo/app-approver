@@ -8,6 +8,7 @@ import com.fantamomo.slack.approver.manager.VerificationManager
 import com.fantamomo.slack.approver.model.RequestDecision
 import com.fantamomo.slack.approver.model.RequestDecisionReason
 import com.fantamomo.slack.approver.model.RequestStatus
+import com.fantamomo.slack.approver.slack.SlackWorkflowService.buildAreYouSureModal
 import io.ktor.http.*
 import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
@@ -100,19 +101,58 @@ object SlackInteractionHandler {
         }
     }
 
-    private suspend fun handleReviewApprove(userId: String, requestId: String, stateId: String?, triggerId: String) {
+    // triggerId may be null if the action came from a modal, but it does not make any difference because the modal can only be opened from THIS methode if triggerId is NOT null
+    private suspend fun handleReviewApprove(
+        userId: String,
+        requestId: String,
+        stateId: String?,
+        triggerId: String?,
+        fromModal: Boolean = false
+    ) {
+        require(triggerId != null || fromModal) { "triggerId must be provided when fromModal is false" }
         if (!InstallRequestRepository.isTeamMemberAuthorized(userId)) {
             logger.warn("User $userId is not authorized to approve request $requestId")
-            openUnauthorizedError(triggerId)
+            if (triggerId != null) {
+                openUnauthorizedError(triggerId)
+            }
             return
         }
 
         val record = InstallRequestRepository.getRequest(requestId) ?: return
         if (stateId != record.stateId) {
             logger.warn("State ID mismatch for request $requestId of $userId ($stateId != ${record.stateId})")
-            openStateMismatchError(triggerId)
+            if (triggerId != null) {
+                openStateMismatchError(triggerId)
+            }
             return
         }
+
+        if (record.userId == userId && !fromModal) {
+            require(triggerId != null) { "triggerId must be provided when fromModal is false" }
+            if (Config.ALLOW_APPROVING_OWN) {
+                val view = buildAreYouSureModal(
+                    title = "Are you sure?",
+                    callbackId = "request_owner_approve",
+                    message = ":warning: You requested this app. Are you sure you want to approve your own request?",
+                    metadata = stateId?.let { "$requestId:$it" } ?: requestId,
+                )
+
+                val opened = SlackManager.openView(triggerId, view)
+                if (opened) {
+                    return
+                }
+            } else {
+                val view = SlackWorkflowService.buildInfoModal(
+                    title = "Not allowed",
+                    message = ":no_entry_sign: Since you submitted this request, another team member will need to approve it."
+                )
+
+                val opened = SlackManager.openView(triggerId, view)
+                if (!opened) logger.warn("Failed to open view for request owner approval")
+                return
+            }
+        }
+
         val stateId = InstallRequestRepository.updateResolution(
             requestId = requestId,
             newStatus = RequestStatus.APPROVED,
@@ -174,7 +214,8 @@ object SlackInteractionHandler {
             "Deny Request",
             "modal_deny_submit",
             stateId?.let { "$requestId:$it" } ?: requestId,
-            "Deny")
+            "Deny"
+        )
         val opened = SlackManager.openView(triggerId, modal)
         if (opened) return
 
@@ -289,10 +330,24 @@ object SlackInteractionHandler {
         when (callbackId) {
             "modal_deny_submit" -> executeDeny(userId, requestId, stateId, reason, triggerId)
             "modal_restrict_submit" -> executeRestrict(userId, requestId, stateId, reason, triggerId)
+            "request_owner_approve" -> {
+                if (Config.ALLOW_APPROVING_OWN) {
+                    handleReviewApprove(userId, requestId, stateId, triggerId, fromModal = true)
+                } else {
+                    logger.warn("Received request_owner_approve callback from user $userId, but ALLOW_APPROVING_OWN is false")
+                }
+            }
+            else -> logger.warn("Received unknown callback id $callbackId from user $userId")
         }
     }
 
-    private suspend fun executeDeny(userId: String, requestId: String, stateId: String?, reason: String?, triggerId: String?) {
+    private suspend fun executeDeny(
+        userId: String,
+        requestId: String,
+        stateId: String?,
+        reason: String?,
+        triggerId: String?
+    ) {
         if (!InstallRequestRepository.isTeamMemberAuthorized(userId)) {
             logger.warn("User $userId is not authorized to deny request $requestId")
             if (triggerId != null) {
@@ -366,7 +421,13 @@ object SlackInteractionHandler {
         )
     }
 
-    private suspend fun executeRestrict(userId: String, requestId: String, stateId: String?, reason: String?, triggerId: String?) {
+    private suspend fun executeRestrict(
+        userId: String,
+        requestId: String,
+        stateId: String?,
+        reason: String?,
+        triggerId: String?
+    ) {
         if (!InstallRequestRepository.isTeamMemberAuthorized(userId)) {
             logger.warn("User $userId is not authorized to restrict request $requestId")
             if (triggerId != null) {
