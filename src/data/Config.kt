@@ -12,146 +12,154 @@ import kotlin.reflect.KProperty
 object Config {
     private val logger = LoggerFactory.getLogger(Config::class.java)
 
-    private val configPath: Path =
-        Path(System.getenv("CONFIG_FILE_PATH") ?: "config.properties")
+    private val configPath: Path = Path(System.getenv("CONFIG_FILE_PATH") ?: "config.properties")
 
     private val properties = Properties()
-
     private val entries = mutableListOf<ConfigEntry<*>>()
-
-    // only true if the file does not exist and any environment variable is provided
     private var skipConfigCreation = false
+    private var initialized = false
 
     val PORT by int(
         key = "server.port",
         default = 80,
-        description = "The port the HTTP server should listen on.",
+        description = "The port the HTTP server should listen on."
     )
 
     val HOST by string(
         key = "server.host",
         default = "0.0.0.0",
-        description = "The host/interface the server should bind to.",
+        description = "The host/interface the server should bind to."
     )
 
     val POSTGRES_URL: String by string(
         key = "postgres.url",
         default = "r2dbc:postgresql://localhost:5432/postgres",
-        description = "The JDBC URL of the Postgres database (prefixed with 'r2dbc:postgresql:').",
+        description = "The R2DBC URL of the PostgreSQL database."
     )
 
     val POSTGRES_USER: String by string(
         key = "postgres.user",
         default = "postgres",
-        description = "The username for the Postgres database.",
+        description = "The username for the PostgreSQL database."
     )
 
     val POSTGRES_PASSWORD: String by string(
         key = "postgres.password",
         default = "postgres",
-        description = "The password for the Postgres database.",
+        description = "The password for the PostgreSQL database."
     )
 
     val SLACK_BOT_TOKEN: String by string(
         key = "slack.bot.token",
-        description = "The Slack bot token.",
+        description = "The Slack bot token."
     )
 
     val SLACK_USER_TOKEN: String by string(
         key = "slack.user.token",
-        description = "The Slack user token.",
+        description = "The Slack user token."
     )
 
     val SLACK_APP_TOKEN: String by string(
         key = "slack.app.token",
-        description = "The Slack app token. (Used in Socket Mode)",
         default = "",
+        description = "The Slack app token. Used in Socket Mode."
     )
 
     val SLACK_SIGNING_SECRET: String by string(
         key = "slack.signing.secret",
-        description = "The Slack signing secret (Used to verify HTTP requests from slack)",
         default = "",
+        description = "The Slack signing secret used to verify HTTP requests from Slack."
     )
 
     val SLACK_CLIENT_TOKEN: String by string(
         key = "slack.client.token",
-        description = "The Slack client token. (Required for command checking)",
         default = "",
+        description = "The Slack client token required for command checking."
     )
 
     val SLACK_SESSION_COOKIE: String by string(
         key = "slack.session.cookie",
-        description = "The Slack session cookie starting with 'xoxd-' (Cookie name is 'd') (Required for command checking)",
         default = "",
+        description = "The Slack session cookie starting with 'xoxd-' (cookie name 'd'), required for command checking."
     )
 
     val SLACK_CHANNEL_REVIEW: String by string(
         key = "slack.channel.review",
-        description = "The Slack channel for reviews.",
+        description = "The Slack channel for reviews."
     )
 
     val SLACK_CHANNEL_LOG: String by string(
         key = "slack.channel.log",
-        description = "The Slack channel for review logs.",
+        description = "The Slack channel for review logs."
     )
 
     val SOCKET_MODE: Boolean by boolean(
         key = "socket.mode",
-        description = "Whether to use socket mode.",
         default = false,
+        description = "Whether to use Socket Mode."
     )
 
     val ADMIN_USERS: Set<String> by string(
         key = "admin.users",
-        description = "Comma separated list of users with permission to the admin commands.",
         default = "",
-    ).map { it.split(",").map { it.trim() }.filter { it.startsWith('W') || it.startsWith('U') }.toSet() }
+        description = "Comma-separated list of users permitted to use admin commands."
+    ).map("admin.users") { value ->
+        value.split(",")
+            .map(String::trim)
+            .filter { it.startsWith('W') || it.startsWith('U') }
+            .toSet()
+    }
 
     val SLACK_SLASH_COMMAND: String by string(
         key = "slack.slash.command",
-        description = "The Slack slash command. (Used to react to the slash command and for messages)",
         default = "/app-approver",
+        description = "The Slack slash command used for interactions and messages."
     )
 
     fun init() {
-        if (properties.isNotEmpty()) return
+        if (initialized) return
+
         mayCreateConfig()
         loadProperties()
         validateAndLoad()
+        initialized = true
     }
 
     private fun string(
         key: String,
         default: String? = null,
-        description: String,
+        description: String
     ) = register(key, default, description) { it }
 
     private fun int(
         key: String,
         default: Int? = null,
-        description: String,
+        description: String
     ) = register(key, default, description) { value ->
         value.toIntOrNull()
-            ?: throw IllegalArgumentException("Expected a valid integer.")
+            ?: throw IllegalArgumentException(
+                "Expected an integer but received '$value'."
+            )
     }
 
     private fun boolean(
         key: String,
         default: Boolean? = null,
-        description: String,
+        description: String
     ) = register(key, default, description) { value ->
         when (value.lowercase()) {
-            "true" -> true
-            "false" -> false
-            else -> throw IllegalArgumentException("Expected 'true' or 'false'.")
+            "true", "1" -> true
+            "false", "0" -> false
+            else -> throw IllegalArgumentException(
+                "Expected 'true', '1', 'false', or '0' but received '$value'."
+            )
         }
     }
 
     private fun path(
         key: String,
         default: Path? = null,
-        description: String,
+        description: String
     ) = register(key, default, description) { value ->
         Path(value).toAbsolutePath()
     }
@@ -161,7 +169,10 @@ object Config {
         default: T?,
         description: String,
         parser: (String) -> T
-    ): ReadOnlyProperty<Config, T> {
+    ): ConfigEntry<T> {
+        check(!initialized) {
+            "Cannot register configuration key '$key' after Config.init() has completed."
+        }
 
         val entry = ConfigEntry(
             key = key,
@@ -171,109 +182,132 @@ object Config {
         )
 
         entries += entry
-
         return entry
     }
 
     private fun validateAndLoad() {
-
         val errors = mutableListOf<String>()
 
         for (entry in entries) {
+            validateEntry(entry, errors)
+        }
 
-            @Suppress("UNCHECKED_CAST")
-            entry as ConfigEntry<Any>
+        if (errors.isNotEmpty()) {
+            throw IllegalStateException(
+                buildString {
+                    appendLine("Configuration validation failed.")
+                    appendLine("Config file: ${configPath.toAbsolutePath()}")
+                    appendLine()
+                    errors.forEach {
+                        appendLine(it)
+                        appendLine()
+                    }
+                }.trimEnd()
+            )
+        }
 
+        try {
+            entries.forEach { it.validateMappings() }
+        } catch (ex: Exception) {
+            throw IllegalStateException(
+                "Configuration mapping failed: ${ex.message}",
+                ex
+            )
+        }
 
-            val envValue = System.getenv(entry.envKey)
-            if (envValue != null) {
-                try {
-                    entry.setValue(entry.parser(envValue.trim()))
-                    logger.info(
-                        "Config '{}' is set via environment variable '{}'.",
-                        entry.key,
-                        entry.envKey
-                    )
-                    continue
-                } catch (ex: Exception) {
-                    logger.warn(
-                        "Failed to parse environment variable '{}'. Value: '{}'. Reason: {}",
-                        entry.envKey,
-                        envValue,
-                        ex.message
-                    )
+        logger.info("Successfully loaded and validated {} config values.", entries.size)
+    }
+
+    private fun validateEntry(
+        entry: ConfigEntry<*>,
+        errors: MutableList<String>
+    ) {
+        val envValue = System.getenv(entry.envKey)
+
+        if (envValue != null) {
+            try {
+                entry.loadFromEnvironment(envValue.trim())
+                logger.info(
+                    "Configuration '{}' loaded from environment variable '{}'.",
+                    entry.key,
+                    entry.envKey
+                )
+                return
+            } catch (ex: Exception) {
+                errors += buildString {
+                    appendLine("Invalid environment variable.")
+                    appendLine("Key: ${entry.key}")
+                    appendLine("Environment variable: ${entry.envKey}")
+                    appendLine("Reason: ${ex.message ?: ex.javaClass.simpleName}")
                 }
+                return
             }
+        }
 
-            val rawValue = properties.getProperty(entry.key)?.replace("\r", "\\")
+        val rawValue = properties.getProperty(entry.key)
 
-            if (rawValue == null) {
-                if (entry.default != null) {
+        if (rawValue == null) {
+            if (entry.default != null) {
+                try {
+                    entry.loadDefault()
                     logger.warn(
-                        "Missing config '{}'. Using default '{}'. Description: {}",
+                        "Configuration '{}' is missing. Using default '{}'. Description: {}",
                         entry.key,
                         entry.default,
                         entry.description
                     )
-
-                    entry.setValue(entry.default)
-                    continue
+                } catch (ex: Exception) {
+                    errors += buildString {
+                        appendLine("Invalid default configuration value.")
+                        appendLine("Key: ${entry.key}")
+                        appendLine("Default: ${entry.default}")
+                        appendLine("Reason: ${ex.message ?: ex.javaClass.simpleName}")
+                    }
                 }
-
-                errors += buildString {
-                    appendLine("Missing required configuration.")
-                    appendLine("Key: ${entry.key}")
-                    appendLine("Description: ${entry.description}")
-                }
-
-                continue
+                return
             }
 
-            try {
-                val parsed = entry.parser(rawValue.trim())
-                entry.setValue(parsed)
-            } catch (ex: Exception) {
-                errors += buildString {
-                    appendLine("Invalid configuration value.")
-                    appendLine("Key: ${entry.key}")
-                    appendLine("Value: $rawValue")
-                    appendLine("Description: ${entry.description}")
-                    appendLine("Reason: ${ex.message}")
-                }
+            errors += buildString {
+                appendLine("Missing required configuration.")
+                appendLine("Key: ${entry.key}")
+                appendLine("Environment variable: ${entry.envKey}")
+                appendLine("Description: ${entry.description}")
+                appendLine("Expected source: config file or environment variable.")
             }
-        }
-
-        if (errors.isNotEmpty()) {
-            val message = buildString {
-                appendLine("Failed to load configuration.")
-                appendLine("Config file: ${configPath.absolutePathString()}")
-                appendLine()
-                errors.forEach {
-                    appendLine(it)
-                }
-            }
-            throw IllegalStateException(message)
-        }
-
-        logger.info("Successfully loaded {} config values.", entries.size)
-    }
-
-    private fun mayCreateConfig() {
-        if (configPath.exists()) {
             return
         }
 
+        try {
+            entry.loadFromConfig(rawValue.trim())
+        } catch (ex: Exception) {
+            errors += buildString {
+                appendLine("Invalid configuration value.")
+                appendLine("Key: ${entry.key}")
+                appendLine("Environment variable: ${entry.envKey}")
+                appendLine("Value: $rawValue")
+                appendLine("Description: ${entry.description}")
+                appendLine("Reason: ${ex.message ?: ex.javaClass.simpleName}")
+            }
+        }
+    }
+
+    private fun mayCreateConfig() {
+        if (configPath.exists()) return
+
         for (entry in entries) {
             if (System.getenv(entry.envKey) != null) {
-                logger.info("A environment ($entry.envKey) variable is provided, skipping config creation.")
+                logger.info(
+                    "Environment variable '{}' is provided. Skipping configuration file creation.",
+                    entry.envKey
+                )
                 skipConfigCreation = true
                 return
             }
         }
 
         logger.warn(
-            "Config file does not exist. Creating default config at '{}'.",
-            configPath.absolutePathString()
+            "Configuration file does not exist. Creating default configuration at '{}'.",
+            configPath.toAbsolutePath()
         )
 
         val defaultConfig = buildString {
@@ -294,19 +328,19 @@ object Config {
         }
 
         try {
-            configPath.parent?.createDirectories()
+            configPath.toAbsolutePath().parent?.createDirectories()
             configPath.outputStream().bufferedWriter().use {
                 it.write(defaultConfig)
             }
 
             logger.info(
-                "Created default config at '{}'.",
-                configPath.absolutePathString()
+                "Created default configuration at '{}'.",
+                configPath.toAbsolutePath()
             )
         } catch (ex: IOException) {
             logger.warn(
-                "Could not create default config file at '{}': {}",
-                configPath.absolutePathString(),
+                "Could not create configuration file at '{}': {}",
+                configPath.toAbsolutePath(),
                 ex.message
             )
         }
@@ -314,73 +348,136 @@ object Config {
 
     private fun loadProperties() {
         if (!configPath.exists()) {
-            if (skipConfigCreation) logger.info(
-                "Config file '{}' does not exist, relying on environment variables and defaults.",
-                configPath.absolutePathString()
-            )
+            if (skipConfigCreation) {
+                logger.info(
+                    "Configuration file '{}' does not exist. Using environment variables and defaults.",
+                    configPath.toAbsolutePath()
+                )
+            }
             return
         }
+
         try {
             configPath.inputStream().use(properties::load)
-
-            logger.info(
-                "Loaded config from '{}'.",
-                configPath.absolutePathString()
-            )
+            logger.info("Loaded configuration from '{}'.", configPath.toAbsolutePath())
         } catch (ex: IOException) {
             throw IllegalStateException(
-                "Failed to load config file '${configPath.absolutePathString()}'.",
+                "Failed to read configuration file '${configPath.toAbsolutePath()}': ${ex.message}",
                 ex
             )
         }
     }
 
-    private fun <I, O> ReadOnlyProperty<Config, I>.map(mapper: (I) -> O): ReadOnlyProperty<Config, O> = Mapper(this, mapper)
+    private fun <I, O> ReadOnlyProperty<Config, I>.map(
+        key: String,
+        mapper: (I) -> O
+    ): ConfigEntry<O> {
+        val source = this as? ConfigEntry<I>
+            ?: throw IllegalArgumentException(
+                "Cannot map configuration '$key': the source is not a supported configuration entry."
+            )
 
-    private class Mapper<I, O>(
-        private val input: ReadOnlyProperty<Config, I>,
-        private val mapper: (I) -> O
-    ) : ReadOnlyProperty<Config, O> {
-        var mapped: Boolean = false
-        var value: O? = null
+        val mappedEntry = ConfigEntry(
+            key = key,
+            default = null,
+            description = "Mapped configuration derived from '$key'.",
+            parser = { value -> mapper(source.parser(value)) }
+        )
 
-        override fun getValue(
-            thisRef: Config,
-            property: KProperty<*>
-        ): O {
-            if (mapped) {
-                return value!!
-            }
-            value = mapper(input.getValue(thisRef, property))
-            mapped = true
-            return value!!
-        }
+        mappedEntry.setMappingSource(source, mapper)
+        entries += mappedEntry
+        return mappedEntry
     }
 
-        private class ConfigEntry<T>(
+    private class ConfigEntry<T>(
         val key: String,
         val default: T?,
         val description: String,
-        val parser: (String) -> T,
-    ): ReadOnlyProperty<Config, T> {
+        val parser: (String) -> T
+    ) : ReadOnlyProperty<Config, T> {
         private var internalValue: T? = null
+        private var initialized = false
+        private var mappingSource: ConfigEntry<Any?>? = null
+        private var mapper: ((Any?) -> T)? = null
+        private var mappingValidated = false
 
         val envKey = key.uppercase().replace('.', '_')
 
-        val value: T?
-            get() = internalValue
-
         fun setValue(value: T) {
             internalValue = value
+            initialized = true
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        fun <I> setMappingSource(
+            source: ConfigEntry<I>,
+            mapper: (I) -> T
+        ) {
+            mappingSource = source as ConfigEntry<Any?>
+            this.mapper = mapper as (Any?) -> T
+        }
+
+        fun loadFromEnvironment(value: String) {
+            setValue(parser(value))
+        }
+
+        fun loadFromConfig(value: String) {
+            setValue(parser(value))
+        }
+
+        fun loadDefault() {
+            val defaultValue = default
+                ?: throw IllegalStateException("No default value is defined.")
+            setValue(defaultValue)
+        }
+
+        fun validateMappings() {
+            if (mappingValidated) return
+
+            val source = mappingSource
+            if (source != null) {
+                source.validateMappings()
+
+                val sourceValue = source.getInitializedValue()
+                val mapping = mapper
+                    ?: throw IllegalStateException(
+                        "Mapping function for configuration '$key' is missing."
+                    )
+
+                try {
+                    setValue(mapping(sourceValue))
+                } catch (ex: Exception) {
+                    throw IllegalArgumentException(
+                        "Failed to map configuration '$key'. Check the source value and mapping logic. Reason: ${ex.message ?: ex.javaClass.simpleName}",
+                        ex
+                    )
+                }
+            }
+
+            mappingValidated = true
+        }
+
+        private fun getInitializedValue(): Any? {
+            if (!initialized) {
+                throw IllegalStateException(
+                    "Configuration '$key' has not been initialized. Check that Config.init() completed successfully."
+                )
+            }
+            return internalValue
         }
 
         override fun getValue(
             thisRef: Config,
             property: KProperty<*>
         ): T {
-            return internalValue ?: throw IllegalStateException(
-                "Config entry '${property.name}' has not been initialized."
-            )
+            if (!initialized) {
+                throw IllegalStateException(
+                    "Configuration property '${property.name}' (key '$key') was accessed before configuration initialization completed. Call Config.init() during application startup and ensure validation succeeds."
+                )
+            }
+
+            @Suppress("UNCHECKED_CAST")
+            return internalValue as T
         }
     }
 }
