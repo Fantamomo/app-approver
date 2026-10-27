@@ -33,6 +33,8 @@ object AppManager {
 
     private val interval = 5.minutes
 
+    private val domainRegex = Regex("""(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b""")
+
     @Serializable
     private class ResponseMetadata(val next_cursor: String)
 
@@ -87,6 +89,8 @@ object AppManager {
     private suspend fun checkCurrentPendingRequests(requests: List<AppRequested>) {
         val requestIds = requests.map { it.id }
         val pendingRequests = InstallRequestRepository.allPendingRequests()
+
+        if (requests.isEmpty() && pendingRequests.isEmpty()) return
 
         val newRequests = requests.filter { it.id !in pendingRequests }
         val noLongerRequests = pendingRequests.filter { it !in requestIds }
@@ -239,6 +243,19 @@ object AppManager {
             else AppCommandManager.returnCommandOwners(appCommands.map { it.name })
                 .filter { it.value != request.app.id }
 
+        // the app request has a domain field, but I didn't figure out what it does, because it seems always empty,
+        // so I log if it is not empty to figure out what it does
+        if (request.domains.isNotEmpty()) logger.info("App request (${request.id} of ${request.app.id}) has domains: ${request.domains.joinToString(", ")}")
+
+        // because of that we're using a hacky way, which might break in the future, but it works now
+        val unfurlDomains = request.scopes
+            .asSequence()
+            .filter { it.name.startsWith("links", ignoreCase = true) }
+            .map { it.description }
+            .flatMap { domainRegex.findAll(it) }
+            .map { match -> match.value }
+            .toSet()
+
         val decisionContext = DecisionContext(
             request = request,
             isUserVerified = isVerified,
@@ -247,6 +264,7 @@ object AppManager {
             previousRequests = previousRequests,
             commandsAllReadyInUse = commandsAllReadyInUse,
             commands = appCommands,
+            unfurlDomains = unfurlDomains,
         )
         val decision = DecisionEngine.evaluate(decisionContext)
 
