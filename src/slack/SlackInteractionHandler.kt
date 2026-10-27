@@ -142,9 +142,19 @@ object SlackInteractionHandler {
                     return
                 }
             } else {
+                val teamMemberCount = runCatching { InstallRequestRepository.teamMemberCount() }.getOrNull()
+
                 val view = SlackWorkflowService.buildInfoModal(
                     title = "Not allowed",
-                    message = ":no_entry_sign: Since you submitted this request, another team member will need to approve it."
+                    message = ":no_entry_sign: Since you submitted this request, another team member will need to approve it." +
+                            when {
+                                teamMemberCount == null -> ""
+                                teamMemberCount == 0L -> "\n\nSeams like there are no tea*m members, that is interesting."
+                                teamMemberCount == 1L -> "\n\nSeams like there is only *one* team member, ... *you*! Well you need another one to approve this request"
+                                teamMemberCount == 2L -> "\n\nSeams like there are only *two* team members, ... you and one other person! Well ask them to approve this request"
+                                teamMemberCount > 2L -> ""
+                                else -> "\n\nSeams like there are *negative (???)* team members, that is interesting."
+                            }
                 )
 
                 val opened = SlackManager.openView(triggerId, view)
@@ -337,6 +347,7 @@ object SlackInteractionHandler {
                     logger.warn("Received request_owner_approve callback from user $userId, but ALLOW_APPROVING_OWN is false")
                 }
             }
+
             else -> logger.warn("Received unknown callback id $callbackId from user $userId")
         }
     }
