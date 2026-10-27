@@ -15,12 +15,7 @@ import org.slf4j.LoggerFactory
 object SlackInteractionHandler {
     private val logger = LoggerFactory.getLogger(SlackInteractionHandler::class.java)
 
-    private val adminUsers = Config.ADMIN_USERS
-        .split(",")
-        .map { it.trim() }
-        .filter { it.isNotEmpty() && (it[0] == 'W' || it[0] == 'U') }
-
-    fun isAdmin(userId: String): Boolean = userId in adminUsers
+    fun isAdmin(userId: String): Boolean = userId in Config.ADMIN_USERS
 
     suspend fun handlePayload(payloadJsonString: String, type: String? = null) {
         val element = Json.parseToJsonElement(payloadJsonString)
@@ -56,7 +51,7 @@ object SlackInteractionHandler {
         }
         val userId = jsonObject["user_id"]?.jsonPrimitive?.contentOrNull
             ?: throw IllegalArgumentException("user_id is missing")
-        if (userId !in adminUsers) {
+        if (userId !in Config.ADMIN_USERS) {
             logger.warn("Unauthorized user attempted to use slash command: $userId")
             openUnauthorizedError(responseUrl)
             return

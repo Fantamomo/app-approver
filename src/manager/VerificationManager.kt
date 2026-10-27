@@ -1,6 +1,7 @@
 package com.fantamomo.slack.approver.manager
 
 import com.fantamomo.slack.approver.data.Config
+import com.fantamomo.slack.approver.data.Constants.MARKETPLACE_URL
 import com.fantamomo.slack.approver.data.RateLimits
 import com.fantamomo.slack.approver.data.SharedData
 import com.fantamomo.slack.approver.db.CachedVerificationStatusTable
@@ -171,9 +172,11 @@ object VerificationManager {
                     reason = RequestDecisionReason.USER_VERIFIED,
                 )
 
+                val appText = if (record.appId.startsWith('A')) "<$MARKETPLACE_URL${record.appId}|${record.appName}>" else "`${record.appName}`"
+
                 SlackManager.sendTextMessage(
                     Config.SLACK_CHANNEL_LOG,
-                    ":white_check_mark: `${record.appName}` requested by <@$userId> was automatically approved after account verification."
+                    ":white_check_mark: $appText requested by <@$userId> was automatically approved after account verification."
                 )
             } else if (decision.status == RequestStatus.PENDING_REVIEW && record.status != RequestStatus.PENDING_REVIEW) {
                 val stateId = InstallRequestRepository.updateStatus(

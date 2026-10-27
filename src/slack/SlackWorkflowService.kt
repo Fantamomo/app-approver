@@ -2,6 +2,7 @@ package com.fantamomo.slack.approver.slack
 
 import com.fantamomo.slack.approver.data.Config
 import com.fantamomo.slack.approver.data.Constants.BULLET
+import com.fantamomo.slack.approver.data.Constants.MARKETPLACE_URL
 import com.fantamomo.slack.approver.decision.DecisionContext
 import com.fantamomo.slack.approver.manager.InstallRequestRepository
 import com.fantamomo.slack.approver.manager.SlackManager
@@ -26,8 +27,6 @@ object SlackWorkflowService {
     private val appHomeCheckCooldown = ConcurrentHashMap<String, Instant>()
 
     private val homeAdminMode = ConcurrentHashMap<String, Boolean>()
-
-    private const val MARKETPLACE_URL = "https://slack.com/marketplace/"
 
     private fun statusEmoji(status: RequestStatus): String = when (status) {
         RequestStatus.PENDING_REVIEW -> ":hourglass_flowing_sand:"
@@ -67,6 +66,7 @@ object SlackWorkflowService {
             RequestDecisionReason.RESOLUTION_UNDONE -> "Resolution undone"
             RequestDecisionReason.COMMAND_ALREADY_IN_USE -> "Command is already in use by another app"
             RequestDecisionReason.SLACK_AUTOMATION -> "The request was resolved by slack automation."
+            RequestDecisionReason.THIRD_PARTY -> "The request was resolved by a third party"
             null -> "None"
         }
     }
@@ -229,7 +229,9 @@ object SlackWorkflowService {
         val reviewTs = record.reviewMessageTs ?: return
         val appUrl = record.appUrl
         val appLink = if (!appUrl.isNullOrBlank()) "<$appUrl|${record.appName}>" else record.appName
-        val statusText = "${statusEmoji(status)} *${statusLabel(status, resolution)}*"
+        val statusText = if (resolution == RequestDecision.WITHDRAWN && reason == RequestDecisionReason.THIRD_PARTY)
+            ":question: *Resolved by someone*"
+            else "${statusEmoji(status)} *${statusLabel(status, resolution)}*"
         val reasonText = formatReason(reason, resolutionMessage, resolvedBy)
 
         SlackManager.updateMessage(Config.SLACK_CHANNEL_REVIEW, reviewTs) {
@@ -254,9 +256,10 @@ object SlackWorkflowService {
         reviewMessageTs: String,
         actorId: String?,
         actionText: String,
-        reason: String? = null
+        reason: String? = null,
+        actorName: String? = null
     ) {
-        val actor = if (actorId != null) "<@$actorId>" else "System"
+        val actor = if (actorId != null) "<@$actorId>" else (actorName ?: "System")
         val reasonStr = if (!reason.isNullOrBlank()) "\n*Reason / Note:* $reason" else ""
         SlackManager.sendMessage(Config.SLACK_CHANNEL_REVIEW, reviewMessageTs) {
             section {

@@ -1,11 +1,13 @@
 package com.fantamomo.slack.approver.manager
 
 import com.fantamomo.slack.approver.data.Config
+import com.fantamomo.slack.approver.data.Constants.MARKETPLACE_URL
 import com.fantamomo.slack.approver.data.RateLimits
 import com.fantamomo.slack.approver.data.SharedData
 import com.fantamomo.slack.approver.decision.DecisionContext
 import com.fantamomo.slack.approver.decision.DecisionEngine
 import com.fantamomo.slack.approver.model.AppRequested
+import com.fantamomo.slack.approver.model.RequestDecision
 import com.fantamomo.slack.approver.model.RequestDecisionReason
 import com.fantamomo.slack.approver.model.RequestStatus
 import com.fantamomo.slack.approver.slack.SlackWorkflowService
@@ -13,18 +15,23 @@ import com.fantamomo.slack.approver.utils.randomString
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.utils.io.CancellationException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import org.slf4j.LoggerFactory
-import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 
 object AppManager {
     private val logger = LoggerFactory.getLogger(AppManager::class.java)
 
     private val requests = Channel<AppRequested>(Channel.UNLIMITED)
     private val running = CompletableDeferred<Unit>()
+
+    private var firstListRequestRun: Boolean = true
+
+    private val interval = 5.minutes
 
     @Serializable
     private class ResponseMetadata(val next_cursor: String)
@@ -41,11 +48,12 @@ object AppManager {
         launch {
             while (true) {
                 // get all pending requests, maybe we missed one
+                val requests: MutableList<AppRequested> = mutableListOf()
                 var foundRequests = 0
                 try {
                     val appRequests = listAppRequests(null)
                     foundRequests += appRequests.size
-                    incomingAppRequests(appRequests)
+                    requests.addAll(appRequests)
                 } catch (e: Exception) {
                     logger.error("Error loading initial requests from Slack API", e)
                 }
@@ -53,14 +61,18 @@ object AppManager {
                     try {
                         val appRequests = listAppRequests(workspace)
                         foundRequests += appRequests.size
-                        incomingAppRequests(appRequests)
+                        requests.addAll(appRequests)
                     } catch (e: Exception) {
                         logger.error("Error loading requests from Slack API for workspace $workspace", e)
                     }
                 }
                 logger.info("Found $foundRequests pending requests")
 
-                delay(1.hours)
+                checkCurrentPendingRequests(requests)
+
+                firstListRequestRun = false
+
+                delay(interval)
             }
         }
 
@@ -70,6 +82,94 @@ object AppManager {
                 handleRequest(request)
             }
         }
+    }
+
+    private suspend fun checkCurrentPendingRequests(requests: List<AppRequested>) {
+        val requestIds = requests.map { it.id }
+        val pendingRequests = InstallRequestRepository.allPendingRequests()
+
+        val newRequests = requests.filter { it.id !in pendingRequests }
+        val noLongerRequests = pendingRequests.filter { it !in requestIds }
+
+        logger.info("Found ${newRequests.size} new requests and ${noLongerRequests.size} which are no longer pending")
+        incomingAppRequests(newRequests)
+
+        // the problem is noLongerRequests, all those requests are no longer pending, and that means a third party has approved or rejected the request
+        // we have NO good way to figure out what happened to those requests (if are now approved or rejected)
+        // so we set them in our system as withdrawn, and close the threads for those requests
+
+        for (request in noLongerRequests) {
+            try {
+                handleNoLongerPendingRequest(request)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                logger.warn("Error processing a no longer pending request: $request", e)
+            }
+        }
+    }
+
+    private suspend fun handleNoLongerPendingRequest(requestId: String) {
+        val request = InstallRequestRepository.getRequest(requestId)
+
+        if (request == null) {
+            // this should be impossible to happen, but just in case
+            logger.warn("No request found for requestId: $requestId")
+            return
+        }
+        if (request.resolution != null) {
+            // also impossible to happen, but just in case
+            logger.warn("Request (no longer pending) already resolved for requestId: $requestId")
+            return
+        }
+
+        val stateId = InstallRequestRepository.updateResolution(
+            requestId = requestId,
+            newStatus = RequestStatus.WITHDRAWN,
+            resolution = RequestDecision.WITHDRAWN,
+            resolvedBy = "THIRD_PARTY",
+            resolutionMessage = "The request was resolved by a third party ${if (firstListRequestRun) "while the program was offline" else "in the last $interval"}",
+            actorType = "SLACK",
+            action = "WITHDRAW",
+            reason = RequestDecisionReason.THIRD_PARTY
+        )
+
+        SlackWorkflowService.updateReviewMessage(
+            record = request.copy(stateId = stateId),
+            status = RequestStatus.WITHDRAWN,
+            resolution = RequestDecision.WITHDRAWN,
+            reason = RequestDecisionReason.THIRD_PARTY,
+            resolvedBy = null,
+            resolutionMessage = null
+        )
+
+        request.reviewMessageTs?.let { ts ->
+            SlackWorkflowService.postReviewThreadUpdate(
+                reviewMessageTs = ts,
+                actorId = null,
+                actionText = "resolved the request ${if (firstListRequestRun) "while the program was offline" else "in the last $interval"}",
+                reason = null,
+                actorName = "Someone"
+            )
+        }
+
+        // we don't send the decision dm because it wasn't actually resolved by us
+//        SlackWorkflowService.sendDecisionDm(
+//            userId = request.userId,
+//            appName = request.appName,
+//            requestId = requestId,
+//            appId = request.appId,
+//            status = RequestStatus.APPROVED,
+//            reason = null,
+//            resolvedBy = "Someone"
+//        )
+
+        val appText = if (request.appId.startsWith('A')) "<$MARKETPLACE_URL${request.appId}|${request.appName}>" else "`${request.appName}`"
+
+
+        SlackManager.sendTextMessage(
+            Config.SLACK_CHANNEL_LOG,
+            ":question: The request of <@${request.userId}> for $appText was resolved by someone"
+        )
     }
 
     suspend fun listAppRequests(workspace: String?): List<AppRequested> {
