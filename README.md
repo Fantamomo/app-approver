@@ -4,7 +4,7 @@ This is a Slack bot that handles the request approval process for a Slack organi
 
 ## Installation
 
-Create a new Slack app using the [`manifest.json`](manifest.json).
+Create a new Slack app using the [`manifest.json`](manifest.json), disable Socket Mode and read [HTTP API](#http-api) for more information.
 
 Then install the app to your **Slack Enterprise Organization**, not to a single workspace. You need to be an organization admin/owner.
 
@@ -29,9 +29,11 @@ The configuration file can be specified using the `CONFIG_FILE_PATH` environment
 | `slack.signing.secret` | The Slack Signing Secret to verify requests from slack in HTTP Mode                |       No | Empty                                        | `SLACK_SIGNING_SECRET` |
 | `slack.channel.review` | The Slack channel used for reviews.                                                |  **Yes** | —                                            | `SLACK_CHANNEL_REVIEW` |
 | `slack.channel.log`    | The Slack channel used for review logs.                                            |  **Yes** | —                                            | `SLACK_CHANNEL_LOG`    |
-| `socket.mode`          | Whether to use Slack Socket Mode instead of the HTTP API.                          |       No | `false`                                      | `SOCKET_MODE`          |
+| `socket.mode`          | Whether to use Slack Socket Mode instead of the HTTP API. (**not recommended**)    |       No | `false`                                      | `SOCKET_MODE`          |
 | `admin.users`          | Comma Seperated List of users (starting with U) that can execute the command       |       No | —                                            | `ADMIN_USERS`          |
 | `slack.slash.command`  | Must be the same as the command you registered in Slack/Manifest (starting with /) |       No | `/app-approver`                              | `SLACK_SLASH_COMMAND`  |
+
+> If **any** environment variable is provided, the program will **not** create the `config.properties` file (but it is still **read**).
 
 ### Running with Docker & Docker Compose
 
@@ -125,48 +127,51 @@ Slack events are received through the HTTP endpoint:
 /slack/events
 ```
 
-Set in your Slack app the **Request URL** to `/slack/events`, the same for Interactions.
+Set in your Slack app the **Request URL** to `<your-domain>/slack/events`, do the same for Interactions.
+
+> We do theoretically support Socket Mode, but we do not recommend it, as it was only implemented for development purposes and not tested in production.
 
 ## Approval Flow
 
 When a request is received, the bot checks the following to determinate if the request is valid and should be approved or rejected.
 
-1. **Restricted**: If the application is restricted, the request is rejected.
-2. **Enterprise Installation**: If the request is for the entier org, the request is rejected.
-3. **Previous denied request**: If the request was previously denied, and nothing changed, the request is also rejected.
+1. **Restricted**: If the application is restricted, the request is <u>rejected</u>.
+2. **Enterprise Installation**: If the request is for the entier org, the request is <u>rejected</u>.
+3. **Previous denied request**: If the request was previously denied, and nothing changed, the request is also <u>rejected</u>. (Do avoid spam)
 4. **Scope evaluation**: All the scopes are checked against the restricted scopes:
-    - If there is any no reviewable scope, the request is rejected.
-    - If there is any reviewable scope, the request need to be manually reviewed.
-    - If the user is not verified and the request not only contains allowed for unverified users scopes, the request is rejected.
-5. **Previous approved scopes**: But hold on, let's review the previous approved scopes first.
-    - If the previous approved scopes contained any restricted scopes, and this request does not add any new restricted scopes, the request is approved.
-    - If this request adds any new restricted scopes, the request is rejected or reviewed within the above rules.
+    - If there is any no reviewable scope, the request is <u>rejected</u>.
+    - If there is any reviewable scope, the request needs to be <u>manually reviewed</u>.
+    - If the user is **not** verified and the request does not only contain scopes that are **allowed** for **unverified users**, the request is <u>rejected</u>.
+5. **Previous approved scopes**: But hold on, let's review the previous approved scopes first. (Only relevant if the app has been approved before)
+    - If the previous approved scopes contained any restricted scopes, and this request does not add any **new** restricted scopes, the request is <u>approved</u>.
+    - If this request adds any new restricted scopes, the request is <u>rejected</u> or <u>reviewed</u> within the **above rules**.
 
 ## Rejecting
 
-I talked a lot about rejecting requests above. Actually the request is not rejected, we mark it like that, but on the slack side, it is still pending review.  
+I talked a lot about rejecting requests above. Actually, the request is not rejected, we mark it like that, but on the slack side, it is still pending review.  
 
-This is used because of how slack works: When a member requests an app, a request is created with the pending status.  
-If we automatically approve it, we tell slack that it is approved.  
-But if the automation rejects it, we dont tell slack that it is rejected. That is because if we do, there is no way to approve it afterward.
+This is used because of how slack works:  
+When a member requests an app, a request is created with the pending status.    
+If we automatically approve it, we tell Slack that it is approved.  
+But if the automation rejects it, we don't tell slack that it is rejected. This is necessary to allow the team to override the decision.
 
-New Problem: A user cannot send a new request if they have a pending request. So there is a button to withdraw the request, which cancels the request on slack side, so the user can send a new request.
+**New Problem**: A user cannot send a new request if they have a pending request. So there is a button to withdraw the request, which cancels the request on Slack's side, so the user can send a new request.
 
-But there is also a request manual review button, which only change our status to pending review.
+But there is also a **Request Manual Review** button, which only changes our status to pending review and updates the thread.
 
-**That's the reason why we dont directly tell slack that the request is rejected.**
+**That's the reason why we don't directly tell slack that the request is rejected.**
 
 ## Reviewing
 
 Every request that is sent creates a new thread in the review channel, even if it is rejected or approved automatically.
 
-The reason behind this is to allow the reviewer to override the automation decision. Also in the thread all the actions are visible.
+The reason behind this is to allow the reviewer to override the automation decision. Also, in the thread all the actions are visible.
 
 ## Restricting
 
-The review team can restrict an app. That means that the app can never be requested again. Slack **does not** allow you to do this.
+The review team can restrict an app. That means that the app can never be requested again. Slack will block every try to install it again.
 
-Only use this if absolutely necessary. You can still undo it.
+> Only use this if absolutely necessary. (You can still undo it later)
 
 ## Status
 
