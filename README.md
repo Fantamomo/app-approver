@@ -32,6 +32,7 @@ The configuration file can be specified using the `CONFIG_FILE_PATH` environment
 | `socket.mode`          | Whether to use Slack Socket Mode instead of the HTTP API. (**not recommended**)    |       No | `false`                                      | `SOCKET_MODE`          |
 | `admin.users`          | Comma Seperated List of users (starting with U) that can execute the command       |       No | —                                            | `ADMIN_USERS`          |
 | `slack.slash.command`  | Must be the same as the command you registered in Slack/Manifest (starting with /) |       No | `/app-approver`                              | `SLACK_SLASH_COMMAND`  |
+| `allow.approving.own`  | Whether to allow team members to approve there own requests                        |       No | `true`                                       | `ALLOW_APPROVING_OWN`  |
 
 > If **any** environment variable is provided, the program will **not** create the `config.properties` file (but it is still **read**).
 
