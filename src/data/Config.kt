@@ -18,6 +18,9 @@ object Config {
 
     private val entries = mutableListOf<ConfigEntry<*>>()
 
+    // only true if the file does not exist and any environment variable is provided
+    private var skipConfigCreation = false
+
     val PORT by int(
         key = "server.port",
         default = 80,
@@ -128,7 +131,7 @@ object Config {
 
     fun init() {
         if (properties.isNotEmpty()) return
-        ensureConfigExists()
+        mayCreateConfig()
         loadProperties()
         validateAndLoad()
     }
@@ -284,9 +287,20 @@ object Config {
         logger.info("Successfully loaded {} config values.", entries.size)
     }
 
-    private fun ensureConfigExists() {
+    private fun mayCreateConfig() {
         if (configPath.exists()) {
             return
+        }
+
+        for (entry in entries) {
+            if (entry.canBeSetByEnv) {
+                val envKey = entry.key.uppercase().replace('.', '_')
+                if (System.getenv(envKey) != null) {
+                    logger.info("A environment ($envKey) variable is provided, skipping config creation.")
+                    skipConfigCreation = true
+                    return
+                }
+            }
         }
 
         logger.warn(
@@ -332,7 +346,7 @@ object Config {
 
     private fun loadProperties() {
         if (!configPath.exists()) {
-            logger.info("Config file '{}' does not exist, relying on environment variables and defaults.", configPath.absolutePathString())
+            if (skipConfigCreation) logger.info("Config file '{}' does not exist, relying on environment variables and defaults.", configPath.absolutePathString())
             return
         }
         try {
