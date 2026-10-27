@@ -66,6 +66,7 @@ object SlackWorkflowService {
             RequestDecisionReason.RESOLUTION_UNDONE -> "Resolution undone"
             RequestDecisionReason.COMMAND_ALREADY_IN_USE -> "Command is already in use by another app"
             RequestDecisionReason.SLACK_AUTOMATION -> "The request was resolved by slack automation."
+            RequestDecisionReason.THIRD_PARTY -> "The request was resolved by a third party"
             null -> "None"
         }
     }
@@ -228,7 +229,9 @@ object SlackWorkflowService {
         val reviewTs = record.reviewMessageTs ?: return
         val appUrl = record.appUrl
         val appLink = if (!appUrl.isNullOrBlank()) "<$appUrl|${record.appName}>" else record.appName
-        val statusText = "${statusEmoji(status)} *${statusLabel(status, resolution)}*"
+        val statusText = if (resolution == RequestDecision.WITHDRAWN && reason == RequestDecisionReason.THIRD_PARTY)
+            ":question: *Resolved by someone*"
+            else "${statusEmoji(status)} *${statusLabel(status, resolution)}*"
         val reasonText = formatReason(reason, resolutionMessage, resolvedBy)
 
         SlackManager.updateMessage(Config.SLACK_CHANNEL_REVIEW, reviewTs) {
