@@ -1,5 +1,7 @@
 # app-approver
 
+> This repo has been moved to [hackclub/appetizer](https://github.com/hackclub/appetizer)
+
 This is a Slack bot that handles the request approval process for a Slack organization.
 
 ## Installation
